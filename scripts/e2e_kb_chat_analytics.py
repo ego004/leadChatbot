@@ -266,10 +266,6 @@ def main():
     ap.add_argument('--admin-token', default=os.getenv('E2E_ADMIN_TOKEN'))
     ap.add_argument('--new-client-name', default=os.getenv('E2E_NEW_CLIENT_NAME', 'Titan Fitness E2E'))
     ap.add_argument('--new-client-website', default=os.getenv('E2E_NEW_CLIENT_WEBSITE', 'https://titan-e2e.example'))
-    # Interactive chat options
-    ap.add_argument('--interactive', action='store_true', help='Start an interactive chat REPL after setup')
-    ap.add_argument('--return-sources', action='store_true', help='Include sources/context in chat responses')
-    ap.add_argument('--print-analytics-each-turn', action='store_true', help='Print analytics summary (today) after each message')
     args = ap.parse_args()
 
     # Obtain admin token for admin-protected endpoints (deployment + KB)
@@ -326,71 +322,32 @@ def main():
     base_sum = get_summary(args.base_url, client_jwt, timeframe="today")
     print(pretty(base_sum))
 
-    # Chat turns (interactive or scripted)
-    if args.interactive:
-        print("\nInteractive chat mode. Type /exit to quit.")
-        print("A new session will be created on your first message.")
-        session_id = None
-        while True:
-            try:
-                text = input("You> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\nExiting interactive mode.")
-                break
-            if not text:
-                continue
-            if text in ("/exit", "/quit", ":q"):
-                break
-            res = send_chat(
-                args.base_url,
-                custom_id,
-                text,
-                token,
-                session_id=session_id,
-                return_sources=args.return_sources,
-            )
-            session_id = res.get("session_id", session_id)
-            bot = res.get("response") or ""
-            print(f"Bot> {bot}")
-            if args.return_sources:
-                ctx = res.get("context_used")
-                if ctx:
-                    try:
-                        print(f"(context_used: {len(ctx)} items)")
-                    except Exception:
-                        print("(context_used included)")
-            if args.print_analytics_each_turn:
-                try:
-                    summary = get_summary(args.base_url, client_jwt, timeframe="today")
-                    print("Analytics (today) totals:", summary.get("totals", {}))
-                except Exception as e:
-                    print(f"(analytics fetch failed: {e})")
-    else:
-        print("Sending chat messages referencing KB content...")
-        session_id = str(uuid.uuid4())
-        for i, msg in enumerate(args.messages, start=1):
-            res = send_chat(args.base_url, custom_id, msg, token, session_id=session_id)
-            print(f"Turn {i} response (truncated):")
-            print(pretty({k: res[k] for k in ["session_id", "response", "context_used", "lead_qualified", "contact_captured"] if k in res}))
-            time.sleep(1)
+    # Chat turns
+    print("Sending chat messages referencing KB content...")
+    session_id = str(uuid.uuid4())
+    for i, msg in enumerate(args.messages, start=1):
+        res = send_chat(args.base_url, custom_id, msg, token, session_id=session_id)
+        print(f"Turn {i} response (truncated):")
+        print(pretty({k: res[k] for k in ["session_id", "response", "context_used", "lead_qualified", "contact_captured"] if k in res}))
+        time.sleep(1)
 
-        # Emulate providing contact info to the chatbot
-        print("Providing contact info to the chatbot (will also pass via query to ensure capture)...")
-        contact_text = (
-            f"My name is {args.contact_name}. You can reach me at {args.contact_email} or {args.contact_phone}."
-        )
-        contact_res = send_chat(
-            args.base_url,
-            custom_id,
-            contact_text,
-            token,
-            session_id=session_id,
-            lead_name=args.contact_name,
-            lead_email=args.contact_email,
-            lead_phone=args.contact_phone,
-        )
-        print("Contact turn result (truncated):")
-        print(pretty({k: contact_res[k] for k in ["session_id", "lead_qualified", "contact_captured"] if k in contact_res}))
+    # Emulate providing contact info to the chatbot
+    print("Providing contact info to the chatbot (will also pass via query to ensure capture)...")
+    contact_text = (
+        f"My name is {args.contact_name}. You can reach me at {args.contact_email} or {args.contact_phone}."
+    )
+    contact_res = send_chat(
+        args.base_url,
+        custom_id,
+        contact_text,
+        token,
+        session_id=session_id,
+        lead_name=args.contact_name,
+        lead_email=args.contact_email,
+        lead_phone=args.contact_phone,
+    )
+    print("Contact turn result (truncated):")
+    print(pretty({k: contact_res[k] for k in ["session_id", "lead_qualified", "contact_captured"] if k in contact_res}))
 
     # Post analytics
     print("Fetching analytics after chat (today)...")
