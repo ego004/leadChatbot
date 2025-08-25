@@ -121,16 +121,23 @@ def get_storage_file(client_id: str, filename: str) -> str:
     return r.json().get("content", "")
 
 
-def list_documents_admin(client_id: str) -> list[dict]:
-    r = s.get(f"{BASE_URL}/admin/clients/{client_id}/documents")
+def list_documents_kb(client_id: str) -> list[dict]:
+    r = s.get(f"{BASE_URL}/api/admin/knowledge-base/client/{client_id}")
     must(r.status_code == 200, f"list KB docs status {r.status_code}")
-    return r.json()
+    data = r.json()
+    # returns {"knowledge_base": [ ... ]}
+    return data.get("knowledge_base", [])
 
 
-def get_document_admin(client_id: str, document_id: str) -> dict:
-    r = s.get(f"{BASE_URL}/admin/clients/{client_id}/documents/{document_id}")
-    must(r.status_code == 200, f"get KB doc status {r.status_code}")
-    return r.json()
+def get_document_kb(client_id: str, document_id: str) -> dict:
+    # Fetch via storage endpoint to retrieve full content; title is not stored in storage
+    r = s.get(
+        f"{BASE_URL}/api/admin/knowledge-base/client/{client_id}/storage/markdown",
+        params={"filename": f"{document_id}.md"},
+    )
+    must(r.status_code == 200, f"get KB doc (storage) status {r.status_code}")
+    payload = r.json()
+    return {"title": f"doc-{document_id}", "content": payload.get("content", "")}
 
 
 def rebuild_vectors(client_id: str) -> None:
@@ -148,9 +155,9 @@ def search(client_id: str, q: str = "pricing", k: int = 5) -> list[dict]:
     return res
 
 
-def trigger_scrape(client_id: str, prompt: str | None = None) -> None:
-    r = s.post(f"{BASE_URL}/admin/clients/{client_id}/scrape", params={"user_prompt": prompt or ""})
-    must(r.status_code == 200, f"scrape status {r.status_code}")
+def trigger_ingestion(client_id: str) -> None:
+    r = s.post(f"{BASE_URL}/api/admin/clients/{client_id}/ingest")
+    must(r.status_code in (200, 202), f"ingest status {r.status_code}")
 
 
 def delete_document(document_id: str) -> None:
@@ -176,11 +183,11 @@ def main():
     print(f"document_id(storage)={doc_storage}, filename={storage_filename}")
 
     # Admin list + fetch
-    docs = list_documents_admin(client_id)
+    docs = list_documents_kb(client_id)
     print("docs count:", len(docs))
     if docs:
         some_doc_id = str(docs[0]["document_id"])
-        full_doc = get_document_admin(client_id, some_doc_id)
+        full_doc = get_document_kb(client_id, some_doc_id)
         print("sample title:", full_doc.get("title"))
 
     # Storage listing and optional read (allow brief eventual consistency)
@@ -197,7 +204,7 @@ def main():
 
     # Optional: website scraping (can be slow)
     if RUN_SCRAPE:
-        trigger_scrape(client_id, prompt="Focus on pricing and product pages")
+        trigger_ingestion(client_id)
 
     print("\nAll checks passed.")
 

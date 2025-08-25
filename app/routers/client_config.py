@@ -218,3 +218,60 @@ async def set_deployment_token(
         "success": True,
         "message": "Deployment token set successfully"
     }
+
+
+@router.get("/client/{client_id}/integration-docs")
+async def get_integration_docs(client_id: str, db: Session = Depends(get_db)):
+    """Return embed code and API usage examples for a client's deployment."""
+    deployment = db.query(ClientDeployment).filter(
+        ClientDeployment.client_id == client_id
+    ).first()
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment configuration not found")
+    if not deployment.custom_client_id:
+        raise HTTPException(status_code=400, detail="Custom client ID not generated")
+
+    custom_id = deployment.custom_client_id
+    token = deployment.deployment_api_token or "<SET_TOKEN>"
+
+    # Base URLs (adjust domain as needed)
+    base_url = deployment.deployment_url.rsplit("/chat/", 1)[0] if deployment.deployment_url else "https://your-domain.com"
+    chat_api = f"{base_url}/api/chat/{custom_id}/message"
+
+    widget_embed = f'<iframe src="{base_url}/chat/{custom_id}" width="400" height="600" frameborder="0"></iframe>'
+
+    curl_example = (
+        "curl -X POST \"" + chat_api + "?message=Hello&session_id=abc123&return_sources=true\" "
+        "-H \"x-deployment-token: " + token + "\""
+    )
+
+    fetch_example = {
+        "js": (
+            "fetch('" + chat_api + "?message=Hello&session_id=abc123', {\n"
+            "  method: 'POST',\n"
+            "  headers: { 'x-deployment-token': '" + token + "' }\n"
+            "}).then(r => r.json()).then(console.log)"
+        )
+    }
+
+    headers_doc = {
+        "required": [
+            {"header": "x-deployment-token", "value": token, "note": "Required by default."}
+        ],
+        "alternatives": [
+            {"header": "Authorization", "value": "Bearer <token>", "note": "Supported alternative to x-deployment-token."}
+        ]
+    }
+
+    return {
+        "custom_client_id": custom_id,
+        "chat_endpoint": chat_api,
+        "widget_embed": widget_embed,
+        "examples": {"curl": curl_example, "fetch": fetch_example},
+        "headers": headers_doc,
+        "notes": [
+            "CHAT_REQUIRE_DEPLOYMENT_TOKEN defaults to true.",
+            "Include session_id to group messages into a conversation.",
+            "Use return_sources=true to include cited KB snippets."
+        ]
+    }

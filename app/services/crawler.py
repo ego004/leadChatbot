@@ -40,6 +40,14 @@ def _crawl_sync(seed_url: str, max_depth: int, ignore_links: bool, max_pages: in
     seed_origin = f"{parsed_seed.scheme}://{parsed_seed.netloc}"
     seed_domain = parsed_seed.netloc
 
+    def normalize_netloc(netloc: str) -> str:
+        nl = netloc.lower()
+        if nl.startswith("www."):
+            nl = nl[4:]
+        return nl
+
+    seed_domain_norm = normalize_netloc(seed_domain)
+
     def is_binary_path(path: str) -> bool:
         return bool(re.search(r"\.(?:pdf|jpg|jpeg|png|gif|svg|webp|ico|mp4|mp3|zip|rar|gz|tar|7z|doc|docx|xls|xlsx)$", path, re.I))
 
@@ -49,7 +57,7 @@ def _crawl_sync(seed_url: str, max_depth: int, ignore_links: bool, max_pages: in
 
     def same_domain(u: str) -> bool:
         try:
-            return urlparse(u).netloc == seed_domain
+            return normalize_netloc(urlparse(u).netloc) == seed_domain_norm
         except Exception:
             return False
 
@@ -143,16 +151,48 @@ def _crawl_sync(seed_url: str, max_depth: int, ignore_links: bool, max_pages: in
     except Exception:
         pass
 
+    seen_sitemaps: Set[str] = set()
+
     def parse_sitemap(sm_url: str) -> List[str]:
         urls: List[str] = []
         try:
+            if sm_url in seen_sitemaps:
+                return urls
+            seen_sitemaps.add(sm_url)
             r = session.get(sm_url, timeout=10)
             if r.status_code != 200:
                 return urls
             soup = BeautifulSoup(r.text, "xml")
+
+            # urlset: direct list of page URLs
+            urlset = soup.find("urlset")
+            if urlset:
+                for loc in urlset.find_all("loc"):
+                    u = loc.get_text().strip()
+                    if same_domain(u) and not is_binary_path(urlparse(u).path):
+                        urls.append(normalize(u))
+                return urls
+
+            # sitemapindex: list of nested sitemap files
+            sitemapindex = soup.find("sitemapindex")
+            if sitemapindex:
+                for sm in sitemapindex.find_all("sitemap"):
+                    loc = sm.find("loc")
+                    if not loc:
+                        continue
+                    child = loc.get_text().strip()
+                    if same_domain(child):
+                        urls.extend(parse_sitemap(child))
+                return urls
+
+            # Fallback: any <loc> entries
             for loc in soup.find_all("loc"):
                 u = loc.get_text().strip()
-                if same_domain(u) and not is_binary_path(urlparse(u).path):
+                # If it's an HTML page, include; if it's another sitemap, recurse
+                if u.lower().endswith((".xml", "/sitemap", "sitemap.xml")):
+                    if same_domain(u):
+                        urls.extend(parse_sitemap(u))
+                elif same_domain(u) and not is_binary_path(urlparse(u).path):
                     urls.append(normalize(u))
         except Exception:
             return []
@@ -160,7 +200,7 @@ def _crawl_sync(seed_url: str, max_depth: int, ignore_links: bool, max_pages: in
 
     seen: Set[str] = set()
     for sm in sitemap_candidates:
-        for u in parse_sitemap(sm)[:1000]:  # cap
+        for u in parse_sitemap(sm)[:1000]:  # cap total extracted from sitemaps
             if u not in seen:
                 seeds.append(u)
                 seen.add(u)

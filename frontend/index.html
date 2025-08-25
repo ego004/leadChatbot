@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeadGenius Admin UI (Minimal)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #222; }
+    h1 { font-size: 22px; margin-bottom: 8px; }
+    h2 { font-size: 18px; margin-top: 24px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    label { display: block; margin: 8px 0 4px; font-size: 12px; color: #374151; }
+    input, textarea { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }
+    button { padding: 8px 12px; background: #111827; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    pre { background: #0b1020; color: #d1f8ff; padding: 8px; border-radius: 6px; overflow: auto; max-height: 240px; }
+  </style>
+</head>
+<body>
+  <h1>LeadGenius Admin UI (Minimal)</h1>
+  <p>Quickly exercise the main admin flows. This is a simple helper for local testing.</p>
+
+  <div class="card">
+    <h2>0) Admin Login</h2>
+    <label>Admin Email</label>
+    <input id="admin_email" placeholder="admin@example.com" />
+    <label>Admin Password</label>
+    <input id="admin_password" type="password" placeholder="********" />
+    <button id="btn_admin_login">Login</button>
+    <pre id="out_admin_login"></pre>
+  </div>
+
+  <div class="card">
+    <h2>1) Create Client</h2>
+    <label>Company Name</label>
+    <input id="client_name" placeholder="Acme Inc" />
+    <label>Website URL</label>
+    <input id="client_website" placeholder="https://acme.com" />
+    <label>Contact Email</label>
+    <input id="client_email" placeholder="admin@acme.com" />
+    <label>Website System Prompt (optional)</label>
+    <textarea id="client_website_system_prompt" rows="4" placeholder="You are a helpful AI assistant..."></textarea>
+    <label>Welcome Message (optional)</label>
+    <input id="client_welcome_message" placeholder="Hello! How can I help you today?" />
+    <button id="btn_create_client">Create Client</button>
+    <pre id="out_create_client"></pre>
+  </div>
+
+  <div class="card">
+    <h2>2) Generate Custom Client ID & Token, Deploy</h2>
+    <label>Client ID</label>
+    <input id="client_id" placeholder="UUID" />
+    <div class="row">
+      <button id="btn_generate_custom_id">Generate Custom ID</button>
+      <button id="btn_generate_token">Generate Token</button>
+    </div>
+    <div class="row" style="margin-top:8px;">
+      <button id="btn_deploy">Deploy</button>
+      <button id="btn_get_deployment">Get Deployment</button>
+    </div>
+    <pre id="out_deploy"></pre>
+  </div>
+
+  <div class="card">
+    <h2>2b) Deployment Settings</h2>
+    <label>Client ID</label>
+    <input id="dep_client_id" placeholder="UUID" />
+    <label>Website System Prompt</label>
+    <textarea id="dep_website_system_prompt" rows="4" placeholder="You are a helpful AI assistant..."></textarea>
+    <label>Welcome Message</label>
+    <input id="dep_welcome_message" placeholder="Welcome!" />
+    <label>Email System Prompt</label>
+    <textarea id="dep_email_system_prompt" rows="3" placeholder="You are a helpful AI sales assistant replying to emails..."></textarea>
+    <label>Email Welcome Message</label>
+    <input id="dep_email_welcome_message" placeholder="Thanks for reaching out!" />
+    <div class="row" style="margin-top:8px;">
+      <button id="btn_save_prompts">Save Prompts</button>
+      <button id="btn_load_prompts">Load Current</button>
+    </div>
+    <h3 style="margin-top:12px;">Manual Token</h3>
+    <label>Deployment API Token</label>
+    <input id="dep_api_token" placeholder="Paste token" />
+    <div class="row" style="margin-top:8px;">
+      <button id="btn_set_token">Set Token</button>
+    </div>
+    <pre id="out_dep_settings"></pre>
+  </div>
+
+  <div class="card">
+    <h2>3) Create Client Dashboard User</h2>
+    <label>Client ID</label>
+    <input id="user_client_id" placeholder="UUID" />
+    <label>Email</label>
+    <input id="user_email" placeholder="user@acme.com" />
+    <label>Password</label>
+    <input id="user_password" type="password" placeholder="********" />
+    <button id="btn_create_user">Create User</button>
+    <pre id="out_create_user"></pre>
+  </div>
+
+  <div class="card">
+    <h2>4) Knowledge Base (Admin)</h2>
+    <div class="row">
+      <div>
+        <label>Client ID</label>
+        <input id="kb_client_id" placeholder="client_id" />
+      </div>
+      <div>
+        <label>Query</label>
+        <input id="kb_query" placeholder="search query" />
+      </div>
+    </div>
+    <div class="row">
+      <button id="btn_kb_list">List</button>
+      <button id="btn_kb_search">Search</button>
+      <button id="btn_kb_ingest">Ingest Website</button>
+      <button id="btn_kb_rebuild">Rebuild Vectors</button>
+    </div>
+    <pre id="out_kb_list"></pre>
+
+    <h3>Add Markdown</h3>
+    <label>Title</label>
+    <input id="kb_add_title" placeholder="Doc title" />
+    <label>Content (markdown)</label>
+    <textarea id="kb_add_content" rows="6" placeholder="# Heading\n..."></textarea>
+    <button id="btn_kb_add">Add</button>
+    <pre id="out_kb_add"></pre>
+
+    <h3>Upload File (.md/.txt)</h3>
+    <input id="kb_file" type="file" accept=".md,.txt" />
+    <button id="btn_kb_upload">Upload</button>
+    <pre id="out_kb_upload"></pre>
+
+    <h3>Update/Delete Entry</h3>
+    <label>Document ID</label>
+    <input id="kb_doc_id" placeholder="document_id" />
+    <label>New Title (optional)</label>
+    <input id="kb_update_title" placeholder="New title" />
+    <label>New Content (optional)</label>
+    <textarea id="kb_update_content" rows="4" placeholder="New content"></textarea>
+    <div class="row">
+      <button id="btn_kb_update">Update</button>
+      <button id="btn_kb_delete">Delete</button>
+    </div>
+    <pre id="out_kb_update"></pre>
+  </div>
+
+  <div class="card">
+    <h2>5) Client Login (email/password)</h2>
+    <label>Email</label>
+    <input id="login_email" placeholder="user@acme.com" />
+    <label>Password</label>
+    <input id="login_password" type="password" placeholder="********" />
+    <label>Client ID Hint (optional)</label>
+    <input id="login_client_hint" placeholder="UUID" />
+    <button id="btn_login">Login</button>
+    <pre id="out_login"></pre>
+  </div>
+
+  <div class="card">
+    <h2>5) Integration Docs</h2>
+    <label>Client ID</label>
+    <input id="docs_client_id" placeholder="UUID" />
+    <button id="btn_get_docs">Get Docs</button>
+    <pre id="out_docs"></pre>
+  </div>
+
+  <div class="card">
+    <h2>6) Test Chat</h2>
+    <label>Custom Client ID</label>
+    <input id="chat_custom_id" placeholder="acme-1a2b3c" />
+    <label>Deployment Token</label>
+    <input id="chat_token" placeholder="token" />
+    <label>Message</label>
+    <input id="chat_message" value="Hello" />
+    <label>Session ID</label>
+    <input id="chat_session" value="test-session" />
+    <button id="btn_chat">Send</button>
+    <pre id="out_chat"></pre>
+  </div>
+
+  <script>
+    let adminToken = null;
+    const out = (id, data) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    };
+
+    // KB Handlers
+    document.getElementById('btn_kb_list').onclick = async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      out('out_kb_list', await getJson(`/api/admin/knowledge-base/client/${clientId}`, { adminAuth: true }));
+    };
+
+    document.getElementById('btn_kb_search').onclick = async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      const q = document.getElementById('kb_query').value;
+      out('out_kb_list', await getJson(`/api/admin/knowledge-base/client/${clientId}/search?query=${encodeURIComponent(q)}&limit=5`, { adminAuth: true }));
+    };
+
+    // Trigger website ingestion/scrape for the client
+    document.getElementById('btn_kb_ingest')?.addEventListener('click', async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      if (!clientId) return out('out_kb_list', { error: 'client_id is required' });
+      const r = await postForm(`/api/admin/clients/${clientId}/ingest`, {}, { adminAuth: true });
+      out('out_kb_list', r);
+    });
+
+    document.getElementById('btn_kb_rebuild').onclick = async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      out('out_kb_list', await postForm(`/api/admin/knowledge-base/client/${clientId}/rebuild-vectors`, {}, { adminAuth: true }));
+    };
+
+    document.getElementById('btn_kb_add').onclick = async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      const title = document.getElementById('kb_add_title').value;
+      const content = document.getElementById('kb_add_content').value;
+      const r = await postJson(`/api/admin/knowledge-base/client/${clientId}/add-markdown`, { title, content }, { adminAuth: true });
+      out('out_kb_add', r);
+      if (r && r.document_id) document.getElementById('kb_doc_id').value = r.document_id;
+    };
+
+    document.getElementById('btn_kb_upload').onclick = async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      const fileInput = document.getElementById('kb_file');
+      if (!fileInput.files || !fileInput.files[0]) return out('out_kb_upload', { error: 'no file selected' });
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      const r = await postMultipart(`/api/admin/knowledge-base/client/${clientId}/upload-file`, fd, { adminAuth: true });
+      out('out_kb_upload', r);
+      if (r && r.document_id) document.getElementById('kb_doc_id').value = r.document_id;
+    };
+
+    document.getElementById('btn_kb_update').onclick = async () => {
+      const document_id = document.getElementById('kb_doc_id').value;
+      const title = document.getElementById('kb_update_title').value;
+      const content = document.getElementById('kb_update_content').value;
+      const body = {};
+      if (title) body.title = title;
+      if (content) body.content = content;
+      const r = await putJson(`/api/admin/knowledge-base/entry/${document_id}`, body, { adminAuth: true });
+      out('out_kb_update', r);
+    };
+
+    document.getElementById('btn_kb_delete').onclick = async () => {
+      const document_id = document.getElementById('kb_doc_id').value;
+      const r = await del(`/api/admin/knowledge-base/entry/${document_id}`, { adminAuth: true });
+      out('out_kb_update', r);
+    };
+
+    const postForm = async (url, obj, { adminAuth = false } = {}) => {
+      const params = new URLSearchParams();
+      Object.entries(obj).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') params.append(k, v); });
+      const headers = {};
+      if (adminAuth && adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(url, { method: 'POST', body: params, headers });
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return res.json();
+      return res.text();
+    };
+
+    const getJson = async (url, { adminAuth = false } = {}) => {
+      const headers = {};
+      if (adminAuth && adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(url, { headers });
+      return res.json();
+    };
+
+    const postJson = async (url, body, { adminAuth = false } = {}) => {
+      const headers = { 'content-type': 'application/json' };
+      if (adminAuth && adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return res.json();
+      return res.text();
+    };
+
+    const putJson = async (url, body, { adminAuth = false } = {}) => {
+      const headers = { 'content-type': 'application/json' };
+      if (adminAuth && adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(url, { method: 'PUT', headers, body: JSON.stringify(body) });
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return res.json();
+      return res.text();
+    };
+
+    const del = async (url, { adminAuth = false } = {}) => {
+      const headers = {};
+      if (adminAuth && adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(url, { method: 'DELETE', headers });
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return res.json();
+      return res.text();
+    };
+
+    const postMultipart = async (url, formData, { adminAuth = false } = {}) => {
+      const headers = {};
+      if (adminAuth && adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+      const res = await fetch(url, { method: 'POST', headers, body: formData });
+      return res.json();
+    };
+
+    document.getElementById('btn_admin_login').onclick = async () => {
+      const email = document.getElementById('admin_email').value;
+      const password = document.getElementById('admin_password').value;
+      const r = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await r.json();
+      if (data && data.access_token) adminToken = data.access_token;
+      out('out_admin_login', data);
+    };
+
+    document.getElementById('btn_create_client').onclick = async () => {
+      const name = document.getElementById('client_name').value;
+      const website_url = document.getElementById('client_website').value;
+      const email = document.getElementById('client_email').value;
+      const website_system_prompt = document.getElementById('client_website_system_prompt').value;
+      const welcome_message = document.getElementById('client_welcome_message').value;
+      const r = await postForm('/admin/clients', { name, website_url, contact_email: email, website_system_prompt, welcome_message }, { adminAuth: true });
+      out('out_create_client', r);
+      if (r && r.client_id) {
+        document.getElementById('client_id').value = r.client_id;
+        document.getElementById('user_client_id').value = r.client_id;
+        document.getElementById('docs_client_id').value = r.client_id;
+        const kbId = document.getElementById('kb_client_id');
+        if (kbId) kbId.value = r.client_id;
+        const depId = document.getElementById('dep_client_id');
+        if (depId) depId.value = r.client_id;
+      }
+    };
+
+    document.getElementById('btn_generate_custom_id').onclick = async () => {
+      const clientId = document.getElementById('client_id').value;
+      const r = await postForm(`/api/admin/client-config/client/${clientId}/generate-custom-id`, {}, { adminAuth: true });
+      out('out_deploy', r);
+      if (r && r.custom_client_id) {
+        document.getElementById('chat_custom_id').value = r.custom_client_id;
+      }
+    };
+
+    document.getElementById('btn_generate_token').onclick = async () => {
+      const clientId = document.getElementById('client_id').value;
+      const r = await postForm(`/api/admin/client-config/client/${clientId}/generate-token`, {}, { adminAuth: true });
+      out('out_deploy', r);
+      if (r && r.deployment_api_token) {
+        document.getElementById('chat_token').value = r.deployment_api_token;
+      }
+    };
+
+    document.getElementById('btn_deploy').onclick = async () => {
+      const clientId = document.getElementById('client_id').value;
+      const r = await postForm(`/api/admin/client-config/client/${clientId}/deploy`, {}, { adminAuth: true });
+      out('out_deploy', r);
+    };
+
+    document.getElementById('btn_get_deployment').onclick = async () => {
+      const clientId = document.getElementById('client_id').value;
+      out('out_deploy', await getJson(`/api/admin/client-config/client/${clientId}/deployment`, { adminAuth: true }));
+    };
+
+    // Deployment settings handlers
+    document.getElementById('btn_load_prompts').onclick = async () => {
+      const clientId = document.getElementById('dep_client_id').value;
+      const d = await getJson(`/api/admin/client-config/client/${clientId}/deployment`, { adminAuth: true });
+      out('out_dep_settings', d);
+      const dep = d && d.deployment ? d.deployment : null;
+      if (dep) {
+        document.getElementById('dep_website_system_prompt').value = dep.website_system_prompt || '';
+        document.getElementById('dep_welcome_message').value = dep.welcome_message || '';
+        document.getElementById('dep_email_system_prompt').value = dep.email_system_prompt || '';
+        document.getElementById('dep_email_welcome_message').value = dep.email_welcome_message || '';
+      }
+    };
+
+    document.getElementById('btn_save_prompts').onclick = async () => {
+      const clientId = document.getElementById('dep_client_id').value;
+      const website_system_prompt = document.getElementById('dep_website_system_prompt').value;
+      const welcome_message = document.getElementById('dep_welcome_message').value;
+      const email_system_prompt = document.getElementById('dep_email_system_prompt').value;
+      const email_welcome_message = document.getElementById('dep_email_welcome_message').value;
+      const r = await fetch(`/api/admin/client-config/client/${clientId}/system-prompts?` +
+        new URLSearchParams({ website_system_prompt, welcome_message, email_system_prompt, email_welcome_message }), {
+        method: 'PUT', headers: { ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {}) }
+      });
+      const data = await r.json();
+      out('out_dep_settings', data);
+    };
+
+    document.getElementById('btn_set_token').onclick = async () => {
+      const clientId = document.getElementById('dep_client_id').value;
+      const token = document.getElementById('dep_api_token').value;
+      const r = await fetch(`/api/admin/client-config/client/${clientId}/token`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', ...(adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {}) },
+        body: JSON.stringify({ token })
+      });
+      const data = await r.json();
+      out('out_dep_settings', data);
+    };
+
+    document.getElementById('btn_create_user').onclick = async () => {
+      const clientId = document.getElementById('user_client_id').value;
+      const email = document.getElementById('user_email').value;
+      const password = document.getElementById('user_password').value;
+      const r = await postForm(`/admin/clients/${clientId}/users`, { email, password }, { adminAuth: true });
+      out('out_create_user', r);
+      if (email) document.getElementById('login_email').value = email;
+      if (clientId) document.getElementById('login_client_hint').value = clientId;
+    };
+
+    document.getElementById('btn_login').onclick = async () => {
+      const email = document.getElementById('login_email').value;
+      const password = document.getElementById('login_password').value;
+      const client_id_hint = document.getElementById('login_client_hint').value;
+      const r = await postForm('/api/client/login', { email, password, client_id_hint });
+      out('out_login', r);
+    };
+
+    document.getElementById('btn_get_docs').onclick = async () => {
+      const clientId = document.getElementById('docs_client_id').value;
+      out('out_docs', await getJson(`/api/admin/client-config/client/${clientId}/integration-docs`, { adminAuth: true }));
+    };
+
+    document.getElementById('btn_chat').onclick = async () => {
+      const customId = document.getElementById('chat_custom_id').value;
+      const token = document.getElementById('chat_token').value;
+      const message = document.getElementById('chat_message').value;
+      const session_id = document.getElementById('chat_session').value;
+      const url = `/api/chat/${encodeURIComponent(customId)}/message?message=${encodeURIComponent(message)}&session_id=${encodeURIComponent(session_id)}&return_sources=true`;
+      const res = await fetch(url, { method: 'POST', headers: { 'x-deployment-token': token } });
+      const ct = res.headers.get('content-type') || '';
+      out('out_chat', ct.includes('application/json') ? await res.json() : await res.text());
+    };
+  </script>
+</body>
+</html>

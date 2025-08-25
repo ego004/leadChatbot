@@ -1,15 +1,12 @@
 import os
 from typing import List, Dict, Any
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.memory import ConversationSummaryMemory, ConversationBufferMemory
-from langchain.chains import ConversationChain
 from app.config import settings
 
 
 class MarkdownFilter:
     def __init__(self):
         self.llm = None
-        self.chain = None
         
         # Only initialize if Google API key is available
         if hasattr(settings, 'google_api_key') and settings.google_api_key:
@@ -19,19 +16,13 @@ class MarkdownFilter:
                     model="gemma-3-27b-it", 
                     temperature=0
                 )
-                self.summary_memory = ConversationSummaryMemory(llm=self.llm)
-                self.buffer_memory = ConversationBufferMemory()
-                self.chain = ConversationChain(
-                    llm=self.llm,
-                    memory=self.summary_memory
-                )
                 print("Google Gemini LLM filter initialized")
             except Exception as e:
                 print(f"Failed to initialize Gemini LLM: {e}")
     
     def is_available(self) -> bool:
         """Check if LLM filtering is available"""
-        return self.chain is not None
+        return self.llm is not None
     
     def filter_markdown_files(self, markdowns: List[Dict[str, Any]], user_prompt: str) -> List[Dict[str, Any]]:
         """
@@ -52,15 +43,15 @@ class MarkdownFilter:
         for md in markdowns:
             try:
                 prompt = self._build_prompt(md['content'], user_prompt)
-                result = self.chain.run(prompt)
-                self.buffer_memory.save_context({"input": prompt}, {"output": result})
+                # Stateless per-document call to avoid memory bleed across pages
+                result = self.llm.predict(prompt)
                 
                 # Only keep if LLM returns markdown (not NULL)
                 if result.strip().upper() != "NULL":
                     # Replace content with LLM's improved markdown output
                     md['content'] = result.strip()
                     filtered.append(md)
-                    
+                
             except Exception as e:
                 print(f"Error filtering markdown {md.get('filename', 'unknown')}: {e}")
                 # Keep original on error

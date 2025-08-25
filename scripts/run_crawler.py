@@ -29,6 +29,8 @@ def print_sample(text: str, max_chars: int = 1200):
 async def main():
     parser = argparse.ArgumentParser(description="Run the crawler directly and preview output")
     parser.add_argument("url", help="Seed URL to crawl, e.g. https://orrya.co")
+    # Also allow --url for convenience (user attempted this)
+    parser.add_argument("--url", dest="url_opt", type=str, help="Seed URL (alternative to positional)")
     parser.add_argument("--max-depth", type=int, default=3, help="Maximum crawl depth (default: 3)")
     parser.add_argument(
         "--include-links",
@@ -54,9 +56,14 @@ async def main():
 
     args = parser.parse_args()
 
-    print(f"== CRAWL: {args.url} (depth={args.max_depth}) ==")
+    # Resolve seed URL, accept either positional or --url
+    seed = args.url_opt or args.url
+    if not seed.startswith("http://") and not seed.startswith("https://"):
+        seed = "https://" + seed
+
+    print(f"== CRAWL: {seed} (depth={args.max_depth}) ==")
     file_paths: List[str] = await crawl_website(
-        url=args.url,
+        url=seed,
         max_depth=args.max_depth,
         content_source="fit_html",
         ignore_links=not args.include_links,
@@ -69,6 +76,11 @@ async def main():
         print(f" ... and {len(file_paths) - 10} more")
 
     # Build markdown items (filename, content, source_url)
+    def extract_source_url(md_text: str) -> str:
+        for line in md_text.splitlines():
+            if line.strip().lower().startswith("source:"):
+                return line.split(":", 1)[1].strip()
+        return seed
     items = []
     for p in file_paths:
         try:
@@ -78,7 +90,7 @@ async def main():
                     items.append({
                         "filename": os.path.basename(p),
                         "content": content,
-                        "source_url": args.url,
+                        "source_url": extract_source_url(content),
                     })
         except Exception as e:
             print(f"Error reading file {p}: {e}")

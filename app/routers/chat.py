@@ -24,7 +24,8 @@ security = HTTPBearer()
 rate_limit_storage = defaultdict(list)
 # Toggle via env var
 RATE_LIMIT_ENABLED = os.getenv("CHAT_RATE_LIMIT_ENABLED", "true").lower() == "true"
-REQUIRE_DEPLOYMENT_TOKEN = os.getenv("CHAT_REQUIRE_DEPLOYMENT_TOKEN", "false").lower() == "true"
+# Default to requiring a deployment token in production-like environments
+REQUIRE_DEPLOYMENT_TOKEN = os.getenv("CHAT_REQUIRE_DEPLOYMENT_TOKEN", "true").lower() == "true"
 
 def check_rate_limit(client_ip: str, limit: int = 10, window: int = 60) -> bool:
     """Check if client has exceeded rate limit"""

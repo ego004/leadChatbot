@@ -4,12 +4,6 @@ from typing import List, Optional
 import logging
 from app.config import settings
 
-# Embeddings: prefer Google Generative AI if configured, otherwise sentence-transformers
-try:
-    from langchain_google_genai import GoogleGenerativeAIEmbeddings  # type: ignore
-except Exception:  # pragma: no cover
-    GoogleGenerativeAIEmbeddings = None  # type: ignore
-
 # Vector stores
 from langchain_community.vectorstores import SupabaseVectorStore  # type: ignore
 from supabase import create_client, Client  # type: ignore
@@ -17,6 +11,20 @@ from supabase import create_client, Client  # type: ignore
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 
 logging.basicConfig(level=logging.INFO)
+
+# Cache a single SentenceTransformerEmbeddings instance process-wide
+_EMBEDDINGS_SINGLETON: Optional[SentenceTransformerEmbeddings] = None
+
+def preload_embeddings():
+    """Preload the SentenceTransformer embeddings singleton.
+    This avoids first-request latency and repeated model loads.
+    Safe to call multiple times.
+    """
+    global _EMBEDDINGS_SINGLETON
+    if _EMBEDDINGS_SINGLETON is None:
+        model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
+        _EMBEDDINGS_SINGLETON = SentenceTransformerEmbeddings(model_name=model_name)
+        logging.info(f"Preloaded SentenceTransformerEmbeddings singleton: {model_name}")
 
 class VectorStoreService:
     """
@@ -35,17 +43,13 @@ class VectorStoreService:
             chunk_overlap=100,
         )
 
-        # Embedding selection
-        # Default to local embeddings unless explicitly configured to 'google'
-        self.embedding_function = None
-        provider = getattr(settings, "embeddings_provider", "local")
-        if provider == "google" and getattr(settings, "google_api_key", None) and GoogleGenerativeAIEmbeddings is not None:
-            self.embedding_function = GoogleGenerativeAIEmbeddings(
-                google_api_key=settings.google_api_key,
-                model="models/embedding-001",
-            )
-        else:
-            self.embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
+        # Embeddings: enforce SentenceTransformers only and reuse singleton
+        global _EMBEDDINGS_SINGLETON
+        if _EMBEDDINGS_SINGLETON is None:
+            model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
+            _EMBEDDINGS_SINGLETON = SentenceTransformerEmbeddings(model_name=model_name)
+            logging.info(f"Initialized SentenceTransformerEmbeddings singleton: {model_name}")
+        self.embedding_function = _EMBEDDINGS_SINGLETON
 
         # Backend selection (Supabase only)
         self._backend: str = "supabase"
@@ -64,7 +68,7 @@ class VectorStoreService:
                 embedding=self.embedding_function,
                 table_name=self.table_name,
                 query_name="match_documents",
-                chunk_size=500,
+                chunk_size=100,
             )
             logging.info("Using SupabaseVectorStore backend")
         except Exception as e:
@@ -93,9 +97,12 @@ class VectorStoreService:
 
     def query(self, query_text: str, k: int = 5) -> List[Document]:
         try:
-            # Filter by our logical collection boundary
-            retriever = self.vector_store.as_retriever(search_kwargs={"k": k, "filter": {"collection": self.collection_name}})
-            return retriever.get_relevant_documents(query_text)
+            # Direct similarity search with filter by logical collection boundary
+            return self.vector_store.similarity_search(
+                query=query_text,
+                k=k,
+                filter={"collection": self.collection_name}
+            )
         except Exception as e:
             logging.error(f"Failed to query vector store: {e}")
             return []
@@ -111,3 +118,18 @@ class VectorStoreService:
             logging.info(f"Deleted Supabase vectors for collection {self.collection_name}")
         except Exception as e:
             logging.error(f"Failed to delete collection {self.collection_name}: {e}")
+
+    def delete_by_document_id(self, document_id: str):
+        """Delete all vector rows for a given document_id within this collection."""
+        try:
+            if not self._supabase_client:
+                return
+            table = self._supabase_client.table(self.table_name)
+            # Both collection and document_id are stored in metadata
+            table.delete() \
+                .filter("metadata->>collection", "eq", self.collection_name) \
+                .filter("metadata->>document_id", "eq", str(document_id)) \
+                .execute()
+            logging.info(f"Deleted vectors for document_id={document_id} in collection {self.collection_name}")
+        except Exception as e:
+            logging.error(f"Failed to delete vectors for document {document_id} in {self.collection_name}: {e}")

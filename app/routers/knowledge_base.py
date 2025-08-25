@@ -141,8 +141,12 @@ async def update_markdown_content(
         kb_entry.content_preview = content[:2000]
         kb_entry.content = None
 
-        # Re-index (append) updated content in vector store
+        # Replace vectors for this document: delete old chunks then add new
         vector_store = VectorStoreService(collection_name=f"client_{kb_entry.client_id}")
+        try:
+            vector_store.delete_by_document_id(str(kb_entry.document_id))
+        except Exception:
+            pass
         vector_store.add_text(content, metadata={"document_id": str(kb_entry.document_id)})
     
     db.commit()
@@ -172,12 +176,16 @@ async def delete_markdown_content(document_id: str, db: Session = Depends(get_db
     except Exception:
         pass
     
+    # Delete vectors for this document_id within the client's collection (best effort)
+    try:
+        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store.delete_by_document_id(str(kb_entry.document_id))
+    except Exception:
+        pass
+    
     # Delete from database
     db.delete(kb_entry)
     db.commit()
-    
-    # Note: Deleting specific vectors associated with this entry is not yet implemented.
-    # A full rebuild of the client's vector collection may be required.
     
     return {
         "success": True,

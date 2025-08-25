@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.client import Client
+from app.models.client_user import ClientUser
 from app.models.lead import Lead, LeadStatus, EmailMessage
 from app.models.knowledge_base import ClientDeployment
 from app.services.lead_service import LeadService
@@ -15,6 +16,7 @@ from app.models.analytics import ClientDailyStats
 import jwt
 import os
 from app.config import settings
+from passlib.hash import bcrypt
 
 router = APIRouter(prefix="/api/client", tags=["Client Dashboard"])
 security = HTTPBearer()
@@ -48,29 +50,59 @@ def verify_client_token(credentials: HTTPAuthorizationCredentials = Depends(secu
 
 @router.post("/login")
 async def client_login(
-    company_name: str,
-    contact_email: str,
+    email: str | None = None,
+    password: str | None = None,
+    client_id_hint: str | None = None,
+    company_name: str | None = None,  # backward compatibility
+    contact_email: str | None = None, # backward compatibility
     db: Session = Depends(get_db)
 ):
-    """Simple client login (in production, use proper authentication)"""
-    
-    client = db.query(Client).filter(
-        Client.name == company_name,
-        Client.contact_email == contact_email
-    ).first()
-    
-    if not client:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    # Create access token
-    access_token = create_access_token(str(client.client_id))
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "client_id": str(client.client_id),
-        "company_name": client.name
-    }
+    """Client dashboard login.
+    Preferred: email + password (optionally client_id_hint to disambiguate).
+    Backward-compat: company_name + contact_email (no password).
+    """
+
+    # Preferred path: email/password
+    if email and password:
+        query = db.query(ClientUser).filter(ClientUser.email == email)
+        if client_id_hint:
+            query = query.filter(ClientUser.client_id == client_id_hint)
+        users = query.all()
+        if not users:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if len(users) > 1 and not client_id_hint:
+            raise HTTPException(status_code=400, detail="Multiple accounts found for this email; provide client_id_hint")
+        user = users[0]
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="User is inactive")
+        if not bcrypt.verify(password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        access_token = create_access_token(str(user.client_id))
+        client = db.query(Client).filter(Client.client_id == str(user.client_id)).first()
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "client_id": str(user.client_id),
+            "company_name": client.name if client else None
+        }
+
+    # Fallback legacy path: company_name + contact_email
+    if company_name and contact_email:
+        client = db.query(Client).filter(
+            Client.name == company_name,
+            Client.contact_email == contact_email
+        ).first()
+        if not client:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        access_token = create_access_token(str(client.client_id))
+        return {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "client_id": str(client.client_id),
+            "company_name": client.name
+        }
+
+    raise HTTPException(status_code=400, detail="Provide email/password or company_name/contact_email")
 
 @router.get("/leads")
 async def get_client_leads(

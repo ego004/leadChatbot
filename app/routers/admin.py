@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
@@ -7,9 +7,10 @@ from app.database import get_db
 from app.models.client import Client, IngestionStatus
 from app.models.knowledge_base import KnowledgeDocument, ClientDeployment
 from app.models.lead import Lead
+from app.models.client_user import ClientUser
 from app.auth import require_admin
 from app.services.ingestion_service import IngestionService
-from app.services.supabase_storage import supabase_storage
+from passlib.hash import bcrypt
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 ingestion_service = IngestionService()
@@ -18,14 +19,65 @@ ingestion_service = IngestionService()
 # ============ CLIENT MANAGEMENT ============
 
 @router.post("/clients", status_code=status.HTTP_201_CREATED)
-def create_client(
-    name: str,
-    website_url: str,
+async def create_client(
+    request: Request,
+    name: Optional[str] = None,
+    website_url: Optional[str] = None,
     contact_email: Optional[str] = None,
+    # Optional deployment fields
+    is_deployed: Optional[bool] = None,
+    custom_client_id: Optional[str] = None,
+    deployment_url: Optional[str] = None,
+    deployment_api_token: Optional[str] = None,
+    website_system_prompt: Optional[str] = None,
+    welcome_message: Optional[str] = None,
+    email_welcome_message: Optional[str] = None,
     db: Session = Depends(get_db),
     _: dict = Depends(require_admin)
 ):
-    """Create a new client"""
+    """Create a new client.
+
+    Accepts values via query params, form fields, or JSON body
+    (name, website_url, optional contact_email).
+    """
+    # If required fields not provided as query params, try JSON then form
+    if not name or not website_url:
+        # Try JSON
+        try:
+            data = await request.json()
+            if isinstance(data, dict):
+                name = name or data.get("name")
+                website_url = website_url or data.get("website_url")
+                contact_email = contact_email or data.get("contact_email")
+        except Exception:
+            pass
+        # Try form
+        if not name or not website_url:
+            try:
+                form = await request.form()
+                name = name or form.get("name")
+                website_url = website_url or form.get("website_url")
+                contact_email = contact_email or form.get("contact_email")
+                # Deployment fields
+                if is_deployed is None:
+                    try:
+                        is_deployed = form.get("is_deployed")
+                        if isinstance(is_deployed, str):
+                            is_deployed = is_deployed.lower() in ["1","true","yes","on"]
+                    except Exception:
+                        is_deployed = None
+                custom_client_id = custom_client_id or form.get("custom_client_id")
+                deployment_url = deployment_url or form.get("deployment_url")
+                deployment_api_token = deployment_api_token or form.get("deployment_api_token")
+                website_system_prompt = website_system_prompt or form.get("website_system_prompt")
+                welcome_message = welcome_message or form.get("welcome_message")
+                email_welcome_message = email_welcome_message or form.get("email_welcome_message")
+            except Exception:
+                pass
+
+    if not name or not website_url:
+        raise HTTPException(status_code=422, detail="Fields 'name' and 'website_url' are required")
+
     client = Client(
         name=name,
         website_url=website_url,
@@ -34,13 +86,74 @@ def create_client(
     db.add(client)
     db.commit()
     db.refresh(client)
-    
-    # Create deployment record
-    deployment = ClientDeployment(client_id=client.client_id)
+
+    # Create deployment record (populate optional fields if provided)
+    deployment = ClientDeployment(
+        client_id=client.client_id,
+        is_deployed=bool(is_deployed) if is_deployed is not None else False,
+        custom_client_id=custom_client_id,
+        deployment_url=deployment_url,
+        deployment_api_token=deployment_api_token,
+        website_system_prompt=website_system_prompt,
+        welcome_message=welcome_message,
+        email_welcome_message=email_welcome_message,
+    )
     db.add(deployment)
     db.commit()
-    
+
     return {"client_id": client.client_id, "name": client.name, "status": "created"}
+
+
+@router.put("/clients/{client_id}/deployment")
+def update_client_deployment(
+    client_id: UUID,
+    is_deployed: Optional[bool] = None,
+    custom_client_id: Optional[str] = None,
+    deployment_url: Optional[str] = None,
+    deployment_api_token: Optional[str] = None,
+    website_system_prompt: Optional[str] = None,
+    welcome_message: Optional[str] = None,
+    email_welcome_message: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    """Update deployment settings for a client."""
+    client = db.query(Client).filter(Client.client_id == str(client_id)).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    deployment = db.query(ClientDeployment).filter(ClientDeployment.client_id == str(client_id)).first()
+    if not deployment:
+        deployment = ClientDeployment(client_id=str(client_id))
+        db.add(deployment)
+        db.commit()
+        db.refresh(deployment)
+
+    if is_deployed is not None:
+        deployment.is_deployed = is_deployed
+    if custom_client_id is not None and custom_client_id.strip():
+        deployment.custom_client_id = custom_client_id.strip()
+    if deployment_url is not None:
+        deployment.deployment_url = deployment_url
+    if deployment_api_token is not None:
+        deployment.deployment_api_token = deployment_api_token
+    if website_system_prompt is not None:
+        deployment.website_system_prompt = website_system_prompt
+    if welcome_message is not None:
+        deployment.welcome_message = welcome_message
+    if email_welcome_message is not None:
+        deployment.email_welcome_message = email_welcome_message
+    db.commit()
+    db.refresh(deployment)
+    return {"message": "Deployment updated", "deployment": {
+        "client_id": str(deployment.client_id),
+        "is_deployed": deployment.is_deployed,
+        "custom_client_id": deployment.custom_client_id,
+        "deployment_url": deployment.deployment_url,
+        "deployment_api_token": deployment.deployment_api_token,
+        "website_system_prompt": deployment.website_system_prompt,
+        "welcome_message": deployment.welcome_message,
+        "email_welcome_message": deployment.email_welcome_message,
+    }}
 
 
 @router.get("/clients")
@@ -165,171 +278,6 @@ def delete_client(
     return {"message": "Client deleted successfully"}
 
 
-# ============ KNOWLEDGE BASE MANAGEMENT ============
-
-@router.post("/clients/{client_id}/scrape")
-async def trigger_website_scraping(
-    client_id: UUID,
-    user_prompt: str | None = None,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    """Trigger website scraping for a client"""
-    client = db.query(Client).filter(Client.client_id == str(client_id)).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-    
-    if client.ingestion_status == IngestionStatus.SCRAPING:
-        raise HTTPException(status_code=409, detail="Scraping already in progress")
-    
-    # Run ingestion pipeline (crawl -> llm filter -> store -> vectors)
-    result = await ingestion_service.ingest_client_website(
-        db=db,
-        client_id=str(client_id),
-        website_url=client.website_url,
-        user_prompt=user_prompt,
-    )
-    return result
-
-
-@router.get("/clients/{client_id}/documents")
-def list_knowledge_documents(
-    client_id: UUID,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    """List all knowledge documents for a client"""
-    documents = db.query(KnowledgeDocument).filter(
-        KnowledgeDocument.client_id == str(client_id)
-    ).all()
-    
-    return [
-        {
-            "document_id": doc.document_id,
-            "title": doc.title,
-            "source_url": doc.source_url,
-            "is_active": doc.is_active,
-            "content_preview": doc.content[:200] + "..." if len(doc.content) > 200 else doc.content,
-            "updated_at": doc.updated_at
-        } for doc in documents
-    ]
-
-
-@router.get("/clients/{client_id}/documents/{document_id}")
-def get_document_content(
-    client_id: UUID,
-    document_id: UUID,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    """Get full content of a knowledge document"""
-    document = db.query(KnowledgeDocument).filter(
-        KnowledgeDocument.document_id == document_id,
-        KnowledgeDocument.client_id == str(client_id)
-    ).first()
-    
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    return {
-        "document_id": document.document_id,
-        "title": document.title,
-        "content": document.content,
-        "source_url": document.source_url,
-        "is_active": document.is_active,
-        "created_at": document.created_at,
-        "updated_at": document.updated_at
-    }
-
-
-@router.put("/clients/{client_id}/documents/{document_id}")
-def update_document_content(
-    client_id: UUID,
-    document_id: UUID,
-    title: Optional[str] = None,
-    content: Optional[str] = None,
-    is_active: Optional[bool] = None,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    """Update knowledge document content"""
-    document = db.query(KnowledgeDocument).filter(
-        KnowledgeDocument.document_id == document_id,
-        KnowledgeDocument.client_id == str(client_id)
-    ).first()
-    
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    if title is not None:
-        document.title = title
-    if content is not None:
-        document.content = content
-    if is_active is not None:
-        document.is_active = is_active
-    
-    db.commit()
-    # Rebuild vectors to reflect changes
-    ingestion_service.rebuild_vectors_for_client(db, str(client_id))
-    
-    return {"message": "Document updated successfully"}
-
-
-@router.post("/clients/{client_id}/documents")
-def create_new_document(
-    client_id: UUID,
-    title: str,
-    content: str,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    """Create a new knowledge document"""
-    client = db.query(Client).filter(Client.client_id == str(client_id)).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-    
-    document = KnowledgeDocument(
-        client_id=str(client_id),
-        title=title,
-        content=content
-    )
-    db.add(document)
-    db.commit()
-    db.refresh(document)
-    # Rebuild vectors to include new doc
-    ingestion_service.rebuild_vectors_for_client(db, str(client_id))
-    
-    return {"document_id": document.document_id, "message": "Document created successfully"}
-
-
-@router.delete("/clients/{client_id}/documents/{document_id}")
-def delete_document(
-    client_id: UUID,
-    document_id: UUID,
-    db: Session = Depends(get_db),
-    _: dict = Depends(require_admin)
-):
-    """Delete a knowledge document"""
-    document = db.query(KnowledgeDocument).filter(
-        KnowledgeDocument.document_id == document_id,
-        KnowledgeDocument.client_id == str(client_id)
-    ).first()
-    
-    if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    
-    # Best-effort: delete mirrored markdown from storage before DB delete
-    try:
-        supabase_storage.delete_markdown(str(client_id), f"{document_id}.md")
-    except Exception:
-        pass
-
-    db.delete(document)
-    db.commit()
-    # Rebuild vectors to remove deleted doc
-    ingestion_service.rebuild_vectors_for_client(db, str(client_id))
-    
-    return {"message": "Document deleted successfully"}
 
 
 # ============ CLIENT UPDATE ============
@@ -383,3 +331,79 @@ def update_client(
     if rebuild_vectors:
         ingestion_service.rebuild_vectors_for_client(db, str(client_id))
     return {"message": "Client updated"}
+
+
+# ============ CLIENT USERS (DASHBOARD CREDENTIALS) ============
+
+@router.post("/clients/{client_id}/users", status_code=status.HTTP_201_CREATED)
+async def create_client_user(
+    client_id: UUID,
+    request: Request,
+    email: Optional[str] = None,
+    password: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    """Create a dashboard user for a client (email/password).
+
+    Accepts values via query params, form fields, or JSON body.
+    """
+    # If required fields not provided as query params, try JSON then form
+    if not email or not password:
+        try:
+            data = await request.json()
+            if isinstance(data, dict):
+                email = email or data.get("email")
+                password = password or data.get("password")
+        except Exception:
+            pass
+        if not email or not password:
+            try:
+                form = await request.form()
+                email = email or form.get("email")
+                password = password or form.get("password")
+            except Exception:
+                pass
+
+    if not email or not password:
+        raise HTTPException(status_code=422, detail="Fields 'email' and 'password' are required")
+
+    client = db.query(Client).filter(Client.client_id == str(client_id)).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    existing = db.query(ClientUser).filter(
+        ClientUser.client_id == str(client_id),
+        ClientUser.email == email
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User already exists for this client")
+    user = ClientUser(
+        client_id=str(client_id),
+        email=email,
+        password_hash=bcrypt.hash(password),
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"user_id": user.user_id, "client_id": user.client_id, "email": user.email}
+
+
+@router.post("/clients/{client_id}/users/{user_id}/reset-password")
+def reset_client_user_password(
+    client_id: UUID,
+    user_id: UUID,
+    new_password: str,
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    """Reset a client user's password."""
+    user = db.query(ClientUser).filter(
+        ClientUser.user_id == str(user_id),
+        ClientUser.client_id == str(client_id)
+    ).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = bcrypt.hash(new_password)
+    db.commit()
+    return {"message": "Password reset successfully"}

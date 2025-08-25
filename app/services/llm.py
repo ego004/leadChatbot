@@ -1,14 +1,14 @@
-import openai
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
+import asyncio
 import json
 from app.config import settings
-
-openai.api_key = settings.openai_api_key
+from app.services.gemini_service import GeminiService
 
 
 class LLMService:
     def __init__(self):
-        self.client = openai.OpenAI(api_key=settings.openai_api_key)
+        # Use Gemini/Gemma as the canonical LLM provider
+        self.gemini = GeminiService()
     
     def generate_system_prompt(self, client_name: str, website_url: str) -> str:
         """Generate a system prompt for the client's chatbot"""
@@ -44,96 +44,51 @@ Remember: You represent {client_name} and should maintain their brand voice and 
         - {"type": "function_call", "function": "capture_lead", "arguments": {...}} for lead capture
         """
         
-        # Prepare context
-        context_text = "\n\n".join(context) if context else "No specific context available."
-        
-        # Prepare chat history
-        messages = [
-            {
-                "role": "system", 
-                "content": f"{system_prompt}\n\nContext from knowledge base:\n{context_text}"
-            }
-        ]
-        
-        # Add chat history
-        for msg in chat_history[-10:]:  # Last 10 messages for context
-            messages.append({
-                "role": "user" if msg["sender"] == "user" else "assistant",
-                "content": msg["message"]
-            })
-        
-        # Add current query
-        messages.append({"role": "user", "content": query})
-        
-        # Define the lead capture function
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "capture_lead",
-                    "description": "Capture lead information when a visitor shows interest or provides contact details",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "name": {
-                                "type": "string",
-                                "description": "The lead's name"
-                            },
-                            "email": {
-                                "type": "string",
-                                "description": "The lead's email address"
-                            },
-                            "phone": {
-                                "type": "string",
-                                "description": "The lead's phone number (optional)"
-                            }
-                        },
-                        "required": ["name", "email"]
-                    }
+        # Build plain context string for GeminiService
+        context_text = "\n".join(context or [])
+
+        # Use Gemini synchronously via asyncio runner
+        try:
+            ai_result = asyncio.run(self.gemini.generate_response(
+                message=query,
+                context=context_text,
+                system_prompt=system_prompt,
+                chat_history=chat_history
+            ))
+        except RuntimeError:
+            # If there's already a running loop (rare here), create a new task
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                ai_result = loop.run_until_complete(self.gemini.generate_response(
+                    message=query,
+                    context=context_text,
+                    system_prompt=system_prompt,
+                    chat_history=chat_history
+                ))
+            finally:
+                loop.close()
+
+        # Map Gemini tool results to the legacy function_call shape when possible
+        tool_results = ai_result.get("tool_results", {}) if isinstance(ai_result, dict) else {}
+        if tool_results.get("contact_info"):
+            args = tool_results["contact_info"]
+            return {
+                "type": "function_call",
+                "function": "capture_lead",
+                "arguments": {
+                    "name": args.get("name", ""),
+                    "email": args.get("email", ""),
+                    "phone": args.get("phone", "")
                 }
             }
-        ]
-        
-        try:
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                temperature=0.7,
-                max_tokens=500
-            )
-            
-            message = response.choices[0].message
-            
-            # Check if it's a function call
-            if message.tool_calls:
-                tool_call = message.tool_calls[0]
-                if tool_call.function.name == "capture_lead":
-                    try:
-                        arguments = json.loads(tool_call.function.arguments)
-                        return {
-                            "type": "function_call",
-                            "function": "capture_lead",
-                            "arguments": arguments
-                        }
-                    except json.JSONDecodeError:
-                        # Fallback to text response if JSON parsing fails
-                        pass
-            
-            # Regular text response
-            return {
-                "type": "text",
-                "content": message.content or "I'm sorry, I couldn't generate a response."
-            }
-            
-        except Exception as e:
-            print(f"LLM Error: {e}")
-            return {
-                "type": "text",
-                "content": "I'm experiencing some technical difficulties. Please try again in a moment."
-            }
+
+        # Otherwise return a plain text response
+        content = ai_result.get("response") if isinstance(ai_result, dict) else str(ai_result)
+        if not content:
+            content = "I'm sorry, I couldn't generate a response."
+        return {"type": "text", "content": content}
 
 
-# Global instance
+# Global instance (kept for backward compatibility)
 llm_service = LLMService()

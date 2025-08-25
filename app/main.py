@@ -1,11 +1,15 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import admin, client_config, knowledge_base, chat, client_dashboard, leads_dashboard, email_chat, automation, auth
+from app.routers.ingestion import router as ingestion_router
 from app.database import engine, Base
 from app.services.db_migrations import run_lightweight_migrations
 from app.services.email_monitor import start_email_monitoring
 import asyncio
 from app.models import analytics  # ensure ClientDailyStats is registered
+from app.models import client_user  # ensure ClientUser is registered
+from app.services.vector_store_service import preload_embeddings
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -40,11 +44,18 @@ app.include_router(client_dashboard.router)
 app.include_router(automation.router)
 app.include_router(email_chat.router)
 app.include_router(auth.router)
+app.include_router(ingestion_router)
+
+# Mount minimal static admin UI
+app.mount("/admin-ui", StaticFiles(directory="frontend", html=True), name="admin-ui")
 
 @app.on_event("startup")
 async def startup_event():
     """Start background services on app startup"""
     try:
+        # Warm embeddings model to avoid first-request latency
+        preload_embeddings()
+        print("✅ Embeddings preloaded")
         await start_email_monitoring()
         print("✅ Email monitoring service started")
     except Exception as e:
