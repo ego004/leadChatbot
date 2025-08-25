@@ -1,4 +1,3 @@
-import pdfplumber
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from typing import List, Optional
@@ -70,23 +69,6 @@ class VectorStoreService:
             logging.info("Using SupabaseVectorStore backend")
         except Exception as e:
             raise RuntimeError(f"Failed to initialize SupabaseVectorStore: {e}")
-
-    def pdf_to_chunks(self, file_path: str, filename: str) -> List[Document]:
-        pdf_chunks = []
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                for i, page in enumerate(pdf.pages):
-                    text = page.extract_text()
-                    if text:
-                        for chunk in self.text_splitter.split_text(text):
-                            pdf_chunks.append(Document(
-                                page_content=chunk,
-                                metadata={"filename": filename, "page": i}
-                            ))
-            return pdf_chunks
-        except Exception as e:
-            logging.error(f"Failed to process PDF {filename}: {e}")
-            return []
 
     def add_documents(self, documents: List[Document]):
         if not documents:
