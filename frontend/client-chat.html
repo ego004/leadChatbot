@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>LeadGenius AI - Chat</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#0b1220;color:#e6eaf2;display:flex;flex-direction:column;height:100vh}
+    header{padding:12px 16px;background:#0e1628;border-bottom:1px solid #1f2a44;display:flex;gap:10px;align-items:center}
+    header input{width:280px}
+    main{flex:1;display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px}
+    section,aside{background:#0e1628;border:1px solid #1f2a44;border-radius:10px}
+    .card{padding:12px}
+    input,textarea,button{background:#0b1220;color:#e6eaf2;border:1px solid #273252;border-radius:8px;padding:8px 10px}
+    button{cursor:pointer}
+    .muted{color:#9aa7c7}
+    .messages{display:flex;flex-direction:column;gap:8px;height:60vh;overflow:auto;padding:12px;background:#0b1220;border:1px solid #1f2a44;border-radius:8px}
+    .bubble{max-width:80%;padding:10px 12px;border-radius:12px}
+    .user{align-self:flex-end;background:#223055}
+    .bot{align-self:flex-start;background:#1a233c}
+    .row{display:flex;gap:8px;align-items:center}
+    .grow{flex:1}
+    small{color:#9aa7c7}
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Public Chat</strong>
+    <span class="muted">custom_client_id:</span>
+    <input id="customClientId" placeholder="custom_client_id"/>
+    <span class="muted">deployment token:</span>
+    <input id="deploymentToken" placeholder="optional token (x-deployment-token)"/>
+    <button id="apply">Apply</button>
+    <span style="flex:1"></span>
+    <label class="row"><input type="checkbox" id="returnSources"> <small>return sources</small></label>
+  </header>
+  <main>
+    <aside>
+      <div class="card">
+        <h3 style="margin:0 0 8px">Session</h3>
+        <div class="row">
+          <small class="muted">session_id</small>
+        </div>
+        <input id="sessionId" readonly/>
+        <div class="row" style="margin-top:8px">
+          <button id="newSession">New session</button>
+        </div>
+        <div style="margin-top:12px">
+          <small class="muted">Tip: pass lead_name/email/phone to capture contacts.</small>
+          <div class="row" style="margin-top:6px"><input id="leadName" class="grow" placeholder="lead_name"></div>
+          <div class="row" style="margin-top:6px"><input id="leadEmail" class="grow" placeholder="lead_email"></div>
+          <div class="row" style="margin-top:6px"><input id="leadPhone" class="grow" placeholder="lead_phone"></div>
+        </div>
+      </div>
+    </aside>
+    <section>
+      <div class="card" style="display:flex;flex-direction:column;height:100%">
+        <div id="messages" class="messages"></div>
+        <div class="row" style="margin-top:10px">
+          <input id="text" class="grow" placeholder="Type a message and press Enter"/>
+          <button id="send">Send</button>
+        </div>
+      </div>
+    </section>
+  </main>
+<script>
+const qs = s=>document.querySelector(s);
+const state = {
+  base: (location.origin),
+  cid: new URLSearchParams(location.search).get('client') || localStorage.getItem('chat_cid') || '',
+  token: new URLSearchParams(location.search).get('token') || localStorage.getItem('chat_token') || '',
+  session: null,
+};
+qs('#customClientId').value = state.cid;
+qs('#deploymentToken').value = state.token;
+
+qs('#apply').onclick = ()=>{
+  state.cid = qs('#customClientId').value.trim();
+  state.token = qs('#deploymentToken').value.trim();
+  localStorage.setItem('chat_cid', state.cid);
+  localStorage.setItem('chat_token', state.token);
+};
+qs('#newSession').onclick = ()=>{ state.session = null; qs('#sessionId').value=''; };
+
+function url(p){ return state.base.replace(/\/$/, '') + p; }
+function headers(){ const h={}; if(state.token) h['x-deployment-token']=state.token; return h; }
+function params(obj){ const u = new URLSearchParams(); Object.entries(obj).forEach(([k,v])=>{ if(v!==undefined && v!==null && v!=='') u.append(k, v);}); return u; }
+function addBubble(text, who){ const div=document.createElement('div'); div.className='bubble '+who; div.textContent=text; qs('#messages').appendChild(div); qs('#messages').scrollTop = qs('#messages').scrollHeight; }
+
+async function send(){
+  const text = qs('#text').value.trim(); if(!text) return;
+  if(!state.cid){ alert('Set custom_client_id'); return; }
+  addBubble(text, 'user');
+  qs('#text').value='';
+  const q = params({
+    message: text,
+    return_sources: qs('#returnSources').checked ? 'true' : 'false',
+    session_id: state.session || undefined,
+    lead_name: qs('#leadName').value.trim() || undefined,
+    lead_email: qs('#leadEmail').value.trim() || undefined,
+    lead_phone: qs('#leadPhone').value.trim() || undefined,
+  });
+  try{
+    const res = await fetch(url(`/api/chat/${encodeURIComponent(state.cid)}/message?`+q.toString()), {
+      method:'POST', headers: headers()
+    });
+    const data = await res.json();
+    if(!res.ok){ throw new Error(data.detail||JSON.stringify(data)); }
+    state.session = data.session_id || state.session; qs('#sessionId').value = state.session || '';
+    addBubble(data.response || '(no response)', 'bot');
+    if(qs('#returnSources').checked && data.context_used){
+      addBubble(`(sources: ${data.context_used.length} items)`, 'bot');
+    }
+  }catch(e){ addBubble('Error: '+e.message, 'bot'); console.error(e); }
+}
+
+qs('#send').onclick = send;
+qs('#text').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); send(); }});
+</script>
+</body>
+</html>

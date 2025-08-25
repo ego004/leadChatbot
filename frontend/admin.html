@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>LeadGenius AI - Admin</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:#0b1220;color:#e6eaf2}
+    header{padding:16px 20px;background:#0e1628;border-bottom:1px solid #1f2a44;display:flex;gap:12px;align-items:center}
+    header h1{margin:0;font-size:18px}
+    main{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px}
+    section,aside{background:#0e1628;border:1px solid #1f2a44;border-radius:10px}
+    .card{padding:14px 14px 10px}
+    h2{margin:0 0 8px;font-size:15px}
+    input,textarea,select,button{background:#0b1220;color:#e6eaf2;border:1px solid #273252;border-radius:8px;padding:8px 10px}
+    textarea{min-height:100px}
+    button{cursor:pointer}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .grid{display:grid;gap:8px}
+    .muted{color:#9aa7c7}
+    .danger{background:#3b1120;border-color:#5b1b2e}
+    .ok{color:#7ae582}
+    .list{max-height:360px;overflow:auto;border:1px solid #1f2a44;border-radius:8px;padding:6px}
+    .list .item{padding:8px;border-bottom:1px solid #1f2a44;cursor:pointer}
+    .list .item:hover{background:#0b1220}
+    .kv{display:grid;grid-template-columns:160px 1fr;gap:6px;align-items:center}
+    small{color:#9aa7c7}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LeadGenius AI — Admin</h1>
+    <span id="status" class="muted"></span>
+    <span style="flex:1"></span>
+    <button id="logoutBtn">Logout</button>
+  </header>
+  <main>
+    <aside>
+      <div class="card grid" style="gap:10px">
+        <h2>Login</h2>
+        <input id="baseUrl" placeholder="Base URL" value="http://localhost:8000"/>
+        <input id="adminEmail" placeholder="Admin Email"/>
+        <input id="adminPassword" placeholder="Admin Password" type="password"/>
+        <div class="row">
+          <button id="loginBtn">Login</button>
+          <small id="loginHint" class="muted"></small>
+        </div>
+      </div>
+      <div class="card grid" style="gap:10px">
+        <h2>Clients</h2>
+        <div class="row">
+          <button id="refreshClients">Refresh</button>
+        </div>
+        <div class="list" id="clientsList"></div>
+        <h2 style="margin-top:12px">Create Client</h2>
+        <input id="newName" placeholder="Name"/>
+        <input id="newWebsite" placeholder="Website URL"/>
+        <input id="newContact" placeholder="Contact Email (optional)"/>
+        <button id="createClient">Create</button>
+      </div>
+    </aside>
+    <section>
+      <div class="card grid" style="gap:12px">
+        <h2>Client Details</h2>
+        <div class="kv">
+          <label>client_id</label>
+          <input id="clientId" readonly/>
+          <label>custom_client_id</label>
+          <input id="customClientId" readonly/>
+          <label>deployment_token</label>
+          <input id="deploymentToken" readonly/>
+          <label>deployment_url</label>
+          <input id="deploymentUrl" readonly/>
+        </div>
+        <div class="row">
+          <button id="btnGetDeployment">Get Deployment</button>
+          <button id="btnGenCustom">Generate Custom ID</button>
+          <button id="btnGenToken">Generate Token</button>
+          <button id="btnDeploy">Deploy</button>
+          <button id="btnCopyChat">Copy Chat URL</button>
+        </div>
+        <small class="muted">Chat URL uses /chat page: /chat?client=<custom_client_id>&token=<deployment_token></small>
+      </div>
+      <div class="card grid" style="gap:10px">
+        <h2>System Prompts</h2>
+        <textarea id="websitePrompt" placeholder="Website system prompt..."></textarea>
+        <input id="welcomeMessage" placeholder="Welcome message"/>
+        <button id="savePrompts">Save Prompts</button>
+      </div>
+      <div class="card grid" style="gap:10px">
+        <h2>Knowledge Base</h2>
+        <div class="row">
+          <input id="kbTitle" placeholder="Title" style="flex:1"/>
+        </div>
+        <textarea id="kbContent" placeholder="# Markdown content" style="min-height:150px"></textarea>
+        <div class="row">
+          <button id="kbAdd">Add Markdown</button>
+          <button id="kbList">List Docs</button>
+        </div>
+        <div class="list" id="kbDocs"></div>
+      </div>
+    </section>
+  </main>
+<script>
+const qs = sel => document.querySelector(sel);
+const state = {
+  token: localStorage.getItem('admin_token') || '',
+  base: localStorage.getItem('base_url') || 'http://localhost:8000',
+  selectedClientId: '',
+};
+qs('#baseUrl').value = state.base;
+if (state.token) qs('#status').textContent = 'Logged in';
+
+function setToken(t){ state.token=t; localStorage.setItem('admin_token', t); qs('#status').textContent = t? 'Logged in':'Logged out'; }
+function setBase(b){ state.base=b; localStorage.setItem('base_url', b); }
+function auth(){ return { 'Authorization': 'Bearer ' + state.token }; }
+function url(p){ return state.base.replace(/\/$/, '') + p; }
+function notify(el, msg){ el.textContent = msg; setTimeout(() => el.textContent='', 3000); }
+
+qs('#logoutBtn').onclick=()=>{ setToken(''); };
+qs('#loginBtn').onclick=async ()=>{
+  try{
+    setBase(qs('#baseUrl').value.trim());
+    const res = await fetch(url('/auth/login'),{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email:qs('#adminEmail').value, password:qs('#adminPassword').value})});
+    if(!res.ok) throw new Error(await res.text());
+    const data = await res.json(); setToken(data.access_token); notify(qs('#loginHint'),'OK'); loadClients();
+  }catch(e){ notify(qs('#loginHint'), 'Login failed'); console.error(e); }
+};
+
+async function loadClients(){
+  if(!state.token) return;
+  qs('#clientsList').innerHTML = '<small class="muted">Loading...</small>';
+  try{
+    const res = await fetch(url('/admin/clients'),{headers: auth()});
+    const items = await res.json();
+    qs('#clientsList').innerHTML = '';
+    (items||[]).forEach(c=>{
+      const div = document.createElement('div');
+      div.className='item';
+      div.textContent = `${c.client_id} — ${c.name||''}`;
+      div.onclick = ()=> selectClient(c.client_id);
+      qs('#clientsList').appendChild(div);
+    });
+  }catch(e){ console.error(e); }
+}
+qs('#refreshClients').onclick=loadClients;
+
+qs('#createClient').onclick=async ()=>{
+  try{
+    const params = new URLSearchParams({ name: qs('#newName').value, website_url: qs('#newWebsite').value });
+    const contact = qs('#newContact').value.trim(); if(contact) params.append('contact_email', contact);
+    const res = await fetch(url('/admin/clients') + '?' + params.toString(), {method:'POST', headers: auth()});
+    if(!res.ok) throw new Error(await res.text());
+    await loadClients();
+  }catch(e){ alert('Create failed'); console.error(e); }
+};
+
+async function selectClient(clientId){
+  state.selectedClientId = clientId;
+  qs('#clientId').value = clientId;
+  await getDeployment();
+  await listDocs();
+}
+
+async function getDeployment(){
+  if(!state.selectedClientId) return;
+  try{
+    const res = await fetch(url(`/api/admin/client-config/client/${state.selectedClientId}/deployment`), {headers: auth()});
+    const d = await res.json();
+    const dep = d.deployment || {};
+    qs('#customClientId').value = dep.custom_client_id || '';
+    qs('#deploymentToken').value = dep.deployment_api_token || '';
+    qs('#deploymentUrl').value = d.deployment_url || dep.deployment_url || '';
+  }catch(e){ console.error(e); }
+}
+qs('#btnGetDeployment').onclick=getDeployment;
+
+qs('#btnGenCustom').onclick=async ()=>{
+  try{
+    const res = await fetch(url(`/api/admin/client-config/client/${state.selectedClientId}/generate-custom-id`), {method:'POST', headers: auth()});
+    const d = await res.json(); qs('#customClientId').value = d.custom_client_id || '';
+  }catch(e){ alert('Failed'); console.error(e); }
+};
+qs('#btnGenToken').onclick=async ()=>{
+  try{
+    const res = await fetch(url(`/api/admin/client-config/client/${state.selectedClientId}/generate-token`), {method:'POST', headers: auth()});
+    const d = await res.json(); qs('#deploymentToken').value = d.deployment_api_token || '';
+  }catch(e){ alert('Failed'); console.error(e); }
+};
+qs('#btnDeploy').onclick=async ()=>{
+  try{
+    const res = await fetch(url(`/api/admin/client-config/client/${state.selectedClientId}/deploy`), {method:'POST', headers: auth()});
+    const d = await res.json(); qs('#deploymentUrl').value = d.deployment_url || '';
+  }catch(e){ alert('Deploy failed'); console.error(e); }
+};
+qs('#btnCopyChat').onclick=()=>{
+  const cid = encodeURIComponent(qs('#customClientId').value);
+  const tok = encodeURIComponent(qs('#deploymentToken').value||'');
+  const link = `${location.origin}/chat?client=${cid}&token=${tok}`;
+  navigator.clipboard.writeText(link).then(()=>alert('Copied: '+link));
+};
+
+qs('#savePrompts').onclick=async ()=>{
+  try{
+    const params = new URLSearchParams({
+      website_system_prompt: qs('#websitePrompt').value,
+      welcome_message: qs('#welcomeMessage').value,
+    });
+    const res = await fetch(url(`/api/admin/client-config/client/${state.selectedClientId}/system-prompts`) + '?' + params.toString(), {method:'PUT', headers: auth()});
+    if(!res.ok) throw new Error(await res.text());
+    alert('Saved');
+  }catch(e){ alert('Save failed'); console.error(e); }
+};
+
+qs('#kbAdd').onclick=async ()=>{
+  try{
+    const form = new FormData();
+    form.append('title', qs('#kbTitle').value);
+    form.append('content', qs('#kbContent').value);
+    const res = await fetch(url(`/api/admin/knowledge-base/client/${state.selectedClientId}/add-markdown`), {method:'POST', headers: auth(), body: form});
+    if(!res.ok) throw new Error(await res.text());
+    await listDocs();
+  }catch(e){ alert('Add failed'); console.error(e); }
+};
+
+async function listDocs(){
+  qs('#kbDocs').innerHTML = '<small class="muted">Loading...</small>';
+  try{
+    const res = await fetch(url(`/admin/clients/${state.selectedClientId}/documents`), {headers: auth()});
+    const docs = await res.json();
+    qs('#kbDocs').innerHTML = '';
+    docs.forEach(d=>{
+      const row = document.createElement('div');
+      row.className='item';
+      row.innerHTML = `<div><b>${d.title||'(untitled)'}</b></div><small class="muted">${d.document_id}</small>`;
+      row.onclick = ()=> kbDocActions(d);
+      qs('#kbDocs').appendChild(row);
+    });
+  }catch(e){ console.error(e); }
+}
+
+async function kbDocActions(doc){
+  const action = prompt('Doc: '+doc.document_id+'\nChoose: update | delete | search', 'update');
+  if(!action) return;
+  if(action==='delete'){
+    if(!confirm('Delete?')) return;
+    const res = await fetch(url(`/api/admin/knowledge-base/entry/${doc.document_id}`), {method:'DELETE', headers: auth()});
+    if(res.ok) listDocs(); else alert('Delete failed');
+  } else if(action==='update'){
+    const newTitle = prompt('New title', doc.title||'');
+    const newContent = prompt('New content (leave blank to keep)', '');
+    const params = new URLSearchParams();
+    if(newTitle!==null) params.append('title', newTitle);
+    if(newContent) params.append('content', newContent);
+    const res = await fetch(url(`/api/admin/knowledge-base/entry/${doc.document_id}`) + '?' + params.toString(), {method:'PUT', headers: auth()});
+    if(res.ok) listDocs(); else alert('Update failed');
+  } else if(action==='search'){
+    const q = prompt('Query', 'pricing');
+    if(!q) return;
+    const res = await fetch(url(`/api/admin/knowledge-base/client/${state.selectedClientId}/search?query=${encodeURIComponent(q)}&limit=5`), {headers: auth()});
+    const data = await res.json();
+    alert('Top results: '+ JSON.stringify((data.results||[]).slice(0,3), null, 2));
+  }
+}
+
+// Auto-load clients if token present
+if(state.token) loadClients();
+</script>
+</body>
+</html>
