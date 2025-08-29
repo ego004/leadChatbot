@@ -8,8 +8,6 @@ attrs==25.3.0
 bcrypt==4.3.0
 beautifulsoup4==4.13.4
 billiard==4.2.1
-bleak==1.1.0
-celery==5.5.3
 certifi==2025.7.14
 cffi==1.17.1
 charset-normalizer==3.4.2
@@ -24,7 +22,6 @@ deprecation==2.1.0
 distro==1.9.0
 dnspython==2.7.0
 ecdsa==0.19.1
-email_validator==2.2.0
 fastapi==0.116.1
 frozenlist==1.7.0
 greenlet==3.2.4
@@ -58,7 +55,6 @@ ormsgpack==1.10.0
 packaging==25.0
 passlib==1.7.4
 pgvector==0.4.1
-pillow==11.3.0
 postgrest==1.1.1
 prompt_toolkit==3.0.51
 propcache==0.3.2
@@ -75,7 +71,6 @@ python-dotenv==1.1.1
 python-jose==3.5.0
 PyYAML==6.0.2
 realtime==2.7.0
-redis==6.4.0
 regex==2024.11.6
 requests==2.32.4
 requests-toolbelt==1.0.0
@@ -102,14 +97,10 @@ uvicorn==0.35.0
 vine==5.1.0
 wcwidth==0.2.13
 websockets==15.0.1
-winrt-runtime==3.2.1
-winrt-Windows.Devices.Bluetooth==3.2.1
-winrt-Windows.Devices.Bluetooth.Advertisement==3.2.1
-winrt-Windows.Devices.Bluetooth.GenericAttributeProfile==3.2.1
-winrt-Windows.Devices.Enumeration==3.2.1
-winrt-Windows.Foundation==3.2.1
-winrt-Windows.Foundation.Collections==3.2.1
-winrt-Windows.Storage.Streams==3.2.1
 xxhash==3.5.0
 yarl==1.20.1
 zstandard==0.23.0
+
+# Embeddings & LLM clients
+sentence-transformers==3.2.1
+google-generativeai==0.8.3
