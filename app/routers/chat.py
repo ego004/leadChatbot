@@ -98,46 +98,77 @@ async def send_message(
     
     # Initialize services
     lead_service = LeadService(db)
-    
-    # Get or create lead (with deduplication & creation flag)
-    lead, lead_created = lead_service.find_or_create_lead_with_flag(
-        client_id=client_id,
-        phone_number=lead_phone,
-        name=lead_name,
-        browser_session_id=session_id
-    )
-    if lead_created:
-        try:
-            increment_stats(db, client_id, sessions_started=1)
-        except Exception:
-            pass
-    
-    # Get or create chat session
+
+    # Determine lead and session linkage correctly
+    lead_created = False
+    session = None
     if session_id:
+        # If a session exists, reuse its lead to avoid creating a new lead
         session = db.query(ChatSession).filter(
             ChatSession.session_id == session_id,
             ChatSession.client_id == client_id
         ).first()
-        if not session:
+        if session:
+            lead = db.query(Lead).filter(Lead.lead_id == session.lead_id).first()
+        else:
+            # No session with that id yet → find or create lead by email/phone/name (do NOT use session_id as browser session)
+            lead, lead_created = lead_service.find_or_create_lead_with_flag(
+                client_id=client_id,
+                phone_number=lead_phone,
+                email=lead_email,
+                name=lead_name,
+                browser_session_id=None
+            )
             session = ChatSession(
-                client_id=client_id, 
+                client_id=client_id,
                 lead_id=str(lead.lead_id),
                 session_id=session_id
             )
             db.add(session)
             db.commit()
+
+            # If provided contact info matches another existing lead, reassign this session
+            try:
+                target_lead = None
+                if qp_email:
+                    target_lead = db.query(Lead).filter(Lead.client_id == client_id, Lead.email == qp_email).first()
+                if not target_lead and qp_phone:
+                    target_lead = db.query(Lead).filter(Lead.client_id == client_id, Lead.phone_number == qp_phone).first()
+                if target_lead and target_lead.lead_id != lead.lead_id:
+                    session.lead_id = str(target_lead.lead_id)
+                    if not target_lead.name and lead.name:
+                        target_lead.name = lead.name
+                    if not target_lead.email and lead.email:
+                        target_lead.email = lead.email
+                    if not target_lead.phone_number and lead.phone_number:
+                        target_lead.phone_number = lead.phone_number
+                    try:
+                        if lead.status != LeadStatus.LOST:
+                            lead.status = LeadStatus.LOST
+                    except Exception:
+                        pass
+                    db.commit()
+                    lead = target_lead
+            except Exception:
+                pass
             db.refresh(session)
-            # Count a unique impression (new chat session)
             try:
                 increment_stats(db, client_id, sessions_started=1)
             except Exception:
                 pass
     else:
+        # No session id supplied → find/create lead then create a new session
+        lead, lead_created = lead_service.find_or_create_lead_with_flag(
+            client_id=client_id,
+            phone_number=lead_phone,
+            email=lead_email,
+            name=lead_name,
+            browser_session_id=None
+        )
         session = ChatSession(client_id=client_id, lead_id=str(lead.lead_id))
         db.add(session)
         db.commit()
         db.refresh(session)
-        # Count a unique impression (new chat session)
         try:
             increment_stats(db, client_id, sessions_started=1)
         except Exception:
@@ -181,8 +212,36 @@ async def send_message(
     
     # Generate AI response with Gemini and tools
     gemini_service = GeminiService()
-    system_prompt = deployment.website_system_prompt or "You are a helpful AI assistant."
-    
+    base_prompt = deployment.website_system_prompt or "You are a helpful AI assistant."
+
+    # Build dynamic guardrails to avoid repetition and progress the flow
+    has_contact_info = bool((lead.email or "").strip() or (lead.phone_number or "").strip())
+    # Inspect last bot/user messages (if any)
+    last_bot_text = None
+    last_user_text = None
+    for m in recent_messages:
+        if m.sender == SenderType.BOT and last_bot_text is None:
+            last_bot_text = m.message_text
+        if m.sender == SenderType.USER and last_user_text is None:
+            last_user_text = m.message_text
+        if last_bot_text and last_user_text:
+            break
+
+    behavioral_rules = [
+        "Do not repeat the exact same sentence across consecutive replies.",
+        "Be concise (1-2 sentences).",
+    ]
+    if has_contact_info:
+        behavioral_rules.append(
+            "Contact info is already saved. Do not say 'I've saved your contact info' again."
+        )
+    if last_bot_text and ("book a quick tour" in last_bot_text.lower() or "book a demo" in last_bot_text.lower()):
+        behavioral_rules.append(
+            "If the user has already agreed to book, move the conversation forward: offer two time slots, ask for preferred time, or confirm timezone instead of asking the same question again."
+        )
+
+    system_prompt = base_prompt + "\n\nBehavioral rules:\n- " + "\n- ".join(behavioral_rules)
+
     ai_result = await gemini_service.generate_response(
         message=message, 
         context=context, 
@@ -269,6 +328,36 @@ async def send_message(
                 pass
 
         db.commit()
+
+        # If the captured contact info matches a different existing lead, merge by reassigning this session
+        try:
+            target_lead = None
+            if email_val:
+                target_lead = db.query(Lead).filter(Lead.client_id == client_id, Lead.email == email_val).first()
+            if not target_lead and phone_val:
+                target_lead = db.query(Lead).filter(Lead.client_id == client_id, Lead.phone_number == phone_val).first()
+            if target_lead and target_lead.lead_id != lead.lead_id:
+                # Reassign current session to target lead
+                session.lead_id = str(target_lead.lead_id)
+                # Fill missing fields on target from current
+                if not target_lead.name and lead.name:
+                    target_lead.name = lead.name
+                if not target_lead.email and lead.email:
+                    target_lead.email = lead.email
+                if not target_lead.phone_number and lead.phone_number:
+                    target_lead.phone_number = lead.phone_number
+                # Optionally mark old lead as LOST
+                try:
+                    if lead.status != LeadStatus.LOST:
+                        lead.status = LeadStatus.LOST
+                except Exception:
+                    pass
+                db.commit()
+                # Use target lead for the remainder of this request
+                lead = target_lead
+        except Exception:
+            pass
+
         # Increment contacts captured analytics if any contact field was captured
         if contact_captured:
             try:
