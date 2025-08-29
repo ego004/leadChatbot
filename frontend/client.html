@@ -113,7 +113,7 @@
               <option value="unqualified">Unqualified</option>
               <option value="converted">Converted</option>
             </select>
-            <input id="lead_search" placeholder="Search name or phone" style="min-width:200px" />
+            <input id="lead_search" placeholder="Search name, email or phone" style="min-width:200px" />
             <label class="muted" for="page_size">Page</label>
             <select id="page_size"><option>10</option><option>25</option><option>50</option></select>
             <button class="btn" id="btn_export">Export CSV</button>
@@ -124,6 +124,7 @@
           <thead>
             <tr>
               <th data-sort="name" style="cursor:pointer">Name</th>
+              <th data-sort="email" style="cursor:pointer">Email</th>
               <th data-sort="phone_number" style="cursor:pointer">Phone</th>
               <th data-sort="status" style="cursor:pointer">Status</th>
               <th data-sort="created_at" style="cursor:pointer">Created</th>
@@ -230,7 +231,7 @@
 
     function leadRow(l) {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${l.name||'Anonymous'}</td><td>${l.phone_number||''}</td><td><span class="tag">${l.status}</span></td><td>${fmt(l.created_at)}</td>`;
+      tr.innerHTML = `<td>${l.name||'Anonymous'}</td><td>${l.email||''}</td><td>${l.phone_number||''}</td><td><span class="tag">${l.status}</span></td><td>${fmt(l.created_at)}</td>`;
       tr.style.cursor = 'pointer';
       tr.onclick = () => openLead(l.lead_id, l.status, l.name);
       return tr;
@@ -249,8 +250,9 @@
       let rows = leadsCache.filter(l => {
         if (!q) return true;
         const name = (l.name||'').toLowerCase();
+        const email = (l.email||'').toLowerCase();
         const phone = (l.phone_number||'').toLowerCase();
-        return name.includes(q) || phone.includes(q);
+        return name.includes(q) || email.includes(q) || phone.includes(q);
       });
       // sort
       rows.sort((a,b)=>{
@@ -353,7 +355,7 @@
       });
       const start = (page-1)*pageSize;
       const pageRows = rows.slice(start, start+pageSize);
-      const header = ['lead_id','name','phone_number','status','created_at'];
+      const header = ['lead_id','name','email','phone_number','status','created_at'];
       const csv = [header.join(',')].concat(pageRows.map(l=> header.map(k=>{
         const v = (l[k]!==undefined && l[k]!==null) ? String(l[k]) : '';
         const esc = v.replaceAll('"','""');

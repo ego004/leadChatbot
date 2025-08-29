@@ -143,8 +143,10 @@ class LeadService:
         self.db.refresh(new_lead)
         return new_lead, True
     
-    def get_chat_history_context(self, lead_id: str, limit: int = 10) -> str:
-        """Get recent chat history for email context"""
+    def get_chat_history_context(self, lead_id: str, limit: int = 10):
+        """Get recent chat history for UI/email context.
+        Returns a list of dicts: [{ sender: 'user'|'bot', message: str, timestamp: datetime }]
+        """
         
         # Get the most recent chat session for this lead
         recent_session = self.db.query(ChatSession).filter(
@@ -152,7 +154,7 @@ class LeadService:
         ).order_by(ChatSession.created_at.desc()).first()
         
         if not recent_session:
-            return "No previous chat history available."
+            return []
         
         # Get recent messages from the session
         messages = self.db.query(ChatHistory).filter(
@@ -160,15 +162,17 @@ class LeadService:
         ).order_by(ChatHistory.timestamp.desc()).limit(limit).all()
         
         if not messages:
-            return "No chat messages found."
+            return []
         
-        # Format messages for context
-        context_lines = []
+        # Return in chronological order (oldest first)
+        result = []
         for msg in reversed(messages):  # Reverse to show chronological order
-            sender = "User" if msg.sender.value == "user" else "Bot"
-            context_lines.append(f"{sender}: {msg.message_text}")
-        
-        return "\n".join(context_lines)
+            result.append({
+                "sender": msg.sender.value if hasattr(msg.sender, 'value') else str(msg.sender),
+                "message": msg.message_text,
+                "timestamp": msg.timestamp,
+            })
+        return result
     
     def create_chat_message(self, lead_id: str, message_text: str, sender_type: str):
         """Create a new chat message"""

@@ -135,6 +135,7 @@ async def get_client_leads(
     formatted_leads = [{
         "lead_id": str(lead.lead_id),
         "name": lead.name,
+        "email": lead.email,
         "phone_number": lead.phone_number,
         "status": lead.status.value,
         "created_at": lead.created_at,
@@ -172,6 +173,7 @@ async def get_lead_details(
         "lead": {
             "lead_id": str(lead.lead_id),
             "name": lead.name,
+            "email": lead.email,
             "phone_number": lead.phone_number,
             "status": lead.status.value,
             "created_at": lead.created_at,
