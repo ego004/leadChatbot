@@ -9,7 +9,6 @@ from app.services.vector_store_service import VectorStoreService
 from app.services.gemini_service import GeminiService
 from app.services.lead_service import LeadService
 from app.services.analytics_service import increment_stats
-from app.services.email_service import EmailService
 import uuid
 from typing import Optional
 import time
@@ -104,13 +103,12 @@ async def send_message(
     lead, lead_created = lead_service.find_or_create_lead_with_flag(
         client_id=client_id,
         phone_number=lead_phone,
-        email=lead_email,
         name=lead_name,
         browser_session_id=session_id
     )
     if lead_created:
         try:
-            increment_stats(db, client_id, leads_created=1)
+            increment_stats(db, client_id, sessions_started=1)
         except Exception:
             pass
     
@@ -307,10 +305,7 @@ async def send_message(
                 except Exception:
                     pass
     
-    # Send email follow-up if lead is qualified and has email
-    if lead_qualified and lead.email:
-        email_service = EmailService(db)
-        email_service.send_follow_up_email(str(lead.lead_id), client_id)
+    # Email follow-up removed (feature no longer supported)
     
     db.commit()
     

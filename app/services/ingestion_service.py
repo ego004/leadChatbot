@@ -1,6 +1,7 @@
 import asyncio
 import os
 from typing import Optional, List, Dict
+import uuid
 from sqlalchemy.orm import Session
 
 from app.models.client import Client, IngestionStatus
@@ -45,59 +46,68 @@ class IngestionService:
                     with open(path, "r", encoding="utf-8") as f:
                         content = f.read()
                         if content.strip():
+                            # Extract per-page source URL from the markdown header ("Source: ...")
+                            source_url = website_url
+                            for line in content.splitlines():
+                                if line.strip().lower().startswith("source:"):
+                                    source_url = line.split(":", 1)[1].strip()
+                                    break
                             markdown_items.append({
                                 "filename": os.path.basename(path),
                                 "content": content,
-                                "source_url": website_url,
+                                "source_url": source_url,
+                                "client_id": client_id,
                             })
                 except Exception:
                     continue
 
             # Optional LLM filtering
             if user_prompt and markdown_filter.is_available():
+                # Reset per-run memory for this client to avoid cross-run carryover
+                try:
+                    markdown_filter.reset_client_memory(client_id)
+                except Exception:
+                    pass
                 markdown_items = markdown_filter.filter_markdown_files(markdown_items, user_prompt)
 
-            # Store as KnowledgeDocuments (replace existing docs for this source)
-            # Simple strategy: delete existing docs with same source_url
+            # Replace all existing documents for this client (fresh ingestion)
             if markdown_items:
                 db.query(KnowledgeDocument).filter(
-                    KnowledgeDocument.client_id == client_id,
-                    KnowledgeDocument.source_url == website_url
+                    KnowledgeDocument.client_id == client_id
                 ).delete()
                 db.commit()
-
-            new_docs: List[KnowledgeDocument] = []
-            for md in markdown_items:
-                # Upload to storage first (best effort)
-                filename = md.get("filename") or "scraped.md"
-                content = md.get("content", "")
+                # Also clear all mirrored blobs in storage so DB and storage stay in sync
                 try:
-                    # Use deterministic path {client_id}/markdowns/{document_id}.md after we create it
-                    pass
+                    supabase_storage.delete_all_client_markdowns(client_id)
                 except Exception:
                     pass
 
+            new_docs: List[KnowledgeDocument] = []
+            for md in markdown_items:
+                content = md.get("content", "")
+                title = md.get("filename") or "scraped.md"
+                # Create metadata-only record with explicit document_id for deterministic filename
+                doc_id = str(uuid.uuid4())
                 doc = KnowledgeDocument(
+                    document_id=doc_id,
                     client_id=client_id,
-                    title=filename,
+                    title=title,
                     content=None,
                     content_preview=content[:2000] if content else None,
                     source_url=md.get("source_url") or website_url,
                 )
                 db.add(doc)
-                new_docs.append(doc)
-            db.commit()
-            for d in new_docs:
-                db.refresh(d)
-                # Now that we have document_id, upload to storage and set storage_path
+                # Upload full content to Supabase Storage under {document_id}.md and set storage_path
                 try:
-                    filename = f"{d.document_id}.md"
-                    supabase_storage.upload_markdown(client_id=client_id, filename=filename, content=d.content_preview or "")
-                    d.storage_path = f"{client_id}/markdowns/{filename}"
-                    # Clear legacy content field just in case
-                    d.content = None
+                    filename = f"{doc_id}.md"
+                    supabase_storage.upload_markdown(client_id=client_id, filename=filename, content=content)
+                    doc.storage_path = f"{client_id}/markdowns/{filename}"
                 except Exception:
+                    # Proceed even if upload fails; rebuild will skip missing content
                     pass
+                # Ensure legacy content is not stored
+                doc.content = None
+                new_docs.append(doc)
             db.commit()
 
             # Rebuild vector store for the client
@@ -116,7 +126,7 @@ class IngestionService:
 
     def rebuild_vectors_for_client(self, db: Session, client_id: str) -> None:
         """Delete and rebuild the client's vector collection from KnowledgeDocuments.
-        Prefer reading markdown from Supabase Storage; fallback to legacy DB content."""
+        Read markdown exclusively from Supabase Storage (no DB fallback)."""
         collection = self._collection_name(client_id)
         vs = VectorStoreService(collection_name=collection)
         # Drop and rebuild
@@ -129,36 +139,43 @@ class IngestionService:
             KnowledgeDocument.is_active == True
         ).all()
         for doc in documents:
-            content = None
-            # Try storage first
             try:
                 filename = f"{doc.document_id}.md"
                 content = supabase_storage.download_markdown(str(client_id), filename)
             except Exception:
                 content = None
-            # Fallback to legacy content
             if not content:
-                content = doc.content
-            if not content:
+                # Skip documents missing in storage
                 continue
-            vs.add_text(content, metadata={"document_id": doc.document_id, "client_id": client_id, "title": doc.title})
+            vs.add_text(
+                content,
+                metadata={
+                    "document_id": doc.document_id,
+                    "client_id": client_id,
+                    "title": doc.title,
+                    "source_url": doc.source_url or "",
+                },
+            )
 
     def add_or_update_document_in_vectors(self, client_id: str, document: KnowledgeDocument) -> None:
         collection = self._collection_name(client_id)
         vs = VectorStoreService(collection_name=collection)
-        content = None
-        # Try to read from Supabase Storage first
         try:
             filename = f"{document.document_id}.md"
             content = supabase_storage.download_markdown(str(client_id), filename)
         except Exception:
             content = None
-        # Fallback to legacy DB content
-        if not content:
-            content = document.content
         if not content:
             return
-        vs.add_text(content, metadata={"document_id": document.document_id, "client_id": client_id, "title": document.title})
+        vs.add_text(
+            content,
+            metadata={
+                "document_id": document.document_id,
+                "client_id": client_id,
+                "title": document.title,
+                "source_url": document.source_url or "",
+            },
+        )
 
     def delete_vectors_for_client(self, client_id: str) -> None:
         collection = self._collection_name(client_id)

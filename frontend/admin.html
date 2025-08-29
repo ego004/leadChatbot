@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Console · LeadGenius</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#9ca3af; --text:#e5e7eb; --accent:#22c55e; --border:#1f2937; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#0b1020,#0f172a);color:var(--text)}
+    header{padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .brand{font-weight:700}
+    .container{max-width:1100px;margin:0 auto;padding:24px}
+    .grid{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+    .card{background:rgba(255,255,255,0.03);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:12px;padding:16px}
+    h1{font-size:22px;margin:0 0 4px}
+    h2{font-size:16px;margin:0 0 8px;color:#cbd5e1}
+    label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+    input,textarea{width:100%;background:#0b1020;border:1px solid var(--border);color:var(--text);padding:10px;border-radius:10px}
+    textarea{resize:vertical}
+    .btn{background:linear-gradient(180deg,#16a34a,#15803d);border:none;color:white;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:600}
+    .btn.secondary{background:#1f2937}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .stack{display:flex;gap:8px;flex-wrap:wrap}
+    pre{background:#0b1020;border:1px solid var(--border);padding:10px;border-radius:10px;overflow:auto}
+    .muted{color:var(--muted);font-size:12px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .chip{display:inline-block;padding:6px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:#cbd5e1}
+    a{color:#93c5fd}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">LeadGenius · Admin Console</div>
+    <nav class="stack">
+      <a href="/admin-ui/client.html">Client Dashboard</a>
+      <a href="/admin-ui/index.html">Legacy Tools</a>
+    </nav>
+  </header>
+
+  <div class="container">
+    <div class="grid">
+      <section class="card">
+        <h1>Quick Start</h1>
+        <p class="muted">Create a client, deploy the chatbot, add basic content, and create a dashboard login.</p>
+        <div class="split">
+          <div>
+            <h2>1) Admin Sign-in</h2>
+            <label>Email</label>
+            <input id="admin_email" placeholder="admin@example.com" />
+            <label>Password</label>
+            <input id="admin_password" type="password" placeholder="********" />
+            <div class="stack" style="margin-top:10px">
+              <button class="btn" id="btn_admin_login">Sign in</button>
+              <span class="chip" id="admin_badge">Not signed in</span>
+            </div>
+            <pre id="out_admin" style="margin-top:10px"></pre>
+          </div>
+          <div>
+            <h2>2) New Client</h2>
+            <label>Company name</label>
+            <input id="client_name" placeholder="Acme Inc" />
+            <label>Website</label>
+            <input id="client_website" placeholder="https://acme.com" />
+            <label>Contact email (optional)</label>
+            <input id="client_email" placeholder="admin@acme.com" />
+            <div class="stack" style="margin-top:10px">
+              <button class="btn" id="btn_create_client">Create Client</button>
+            </div>
+            <pre id="out_create_client" style="margin-top:10px"></pre>
+          </div>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h2>Status</h2>
+        <div class="muted">Client ID</div>
+        <div id="info_client_id" class="chip" style="margin:6px 0">—</div>
+        <div class="muted">Custom Client ID</div>
+        <div id="info_custom_id" class="chip" style="margin:6px 0">—</div>
+        <div class="muted">Deployment Token</div>
+        <div id="info_token" class="chip" style="margin:6px 0">—</div>
+      </aside>
+    </div>
+
+    <section class="card">
+      <h2>3) One‑click Deploy</h2>
+      <p class="muted">We’ll generate a Custom Client ID and an API token, then mark the chatbot as deployed.</p>
+      <button class="btn" id="btn_one_click_deploy">Deploy Chatbot</button>
+      <pre id="out_deploy" style="margin-top:10px"></pre>
+    </section>
+
+    <section class="card">
+      <h2>4) Add Welcome Content</h2>
+      <p class="muted">Paste a short markdown intro. You can add more later.</p>
+      <label>Client ID</label>
+      <input id="kb_client_id" placeholder="Client ID" />
+      <label>Title</label>
+      <input id="kb_title" placeholder="Company Overview" />
+      <label>Content</label>
+      <textarea id="kb_content" rows="5"># Welcome to Our Company
+We provide AI-powered lead capture.
+
+## Contact
+Email: sales@example.com</textarea>
+      <div class="stack" style="margin-top:10px">
+        <button class="btn" id="btn_add_md">Add Content</button>
+      </div>
+      <pre id="out_kb" style="margin-top:10px"></pre>
+    </section>
+
+    <section class="card">
+      <h2>5) Create Dashboard User</h2>
+      <div class="row">
+        <div>
+          <label>Client ID</label>
+          <input id="user_client_id" placeholder="Client ID" />
+        </div>
+        <div>
+          <label>User Email</label>
+          <input id="user_email" placeholder="owner@acme.com" />
+        </div>
+      </div>
+      <label>Password</label>
+      <input id="user_password" type="password" placeholder="********" />
+      <div class="stack" style="margin-top:10px">
+        <button class="btn" id="btn_create_user">Create User</button>
+      </div>
+      <pre id="out_user" style="margin-top:10px"></pre>
+    </section>
+
+    <section class="card">
+      <h2>Integration</h2>
+      <p class="muted">Embed your chatbot with the Custom Client ID and Token in your site or app. See documentation in the repo.</p>
+      <a href="/admin-ui/client.html">Open Client Dashboard</a>
+    </section>
+  </div>
+
+  <script>
+    let adminToken = null;
+    const out = (id, data) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+    };
+    const setBadge = (ok) => {
+      const b = document.getElementById('admin_badge');
+      b.textContent = ok ? 'Signed in' : 'Not signed in';
+      b.style.borderColor = ok ? '#16a34a' : '#1f2937';
+      b.style.color = ok ? '#86efac' : '#cbd5e1';
+    };
+    const authHeaders = () => (adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {});
+
+    document.getElementById('btn_admin_login').onclick = async () => {
+      const email = document.getElementById('admin_email').value;
+      const password = document.getElementById('admin_password').value;
+      const r = await fetch('/auth/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password })
+      });
+      const data = await r.json();
+      if (data && data.access_token) { adminToken = data.access_token; setBadge(true); }
+      out('out_admin', data);
+    };
+
+    document.getElementById('btn_create_client').onclick = async () => {
+      const name = document.getElementById('client_name').value;
+      const website_url = document.getElementById('client_website').value;
+      const contact_email = document.getElementById('client_email').value;
+      const params = new URLSearchParams({ name, website_url, contact_email });
+      const r = await fetch('/admin/clients', { method: 'POST', headers: authHeaders(), body: params });
+      const data = await r.json();
+      out('out_create_client', data);
+      if (data && data.client_id) {
+        document.getElementById('info_client_id').textContent = data.client_id;
+        document.getElementById('kb_client_id').value = data.client_id;
+        document.getElementById('user_client_id').value = data.client_id;
+      }
+    };
+
+    document.getElementById('btn_one_click_deploy').onclick = async () => {
+      const clientId = document.getElementById('info_client_id').textContent || document.getElementById('kb_client_id').value;
+      if (!clientId) return out('out_deploy', { error: 'Missing client id' });
+      // 1) custom id
+      let r = await fetch(`/api/admin/client-config/client/${clientId}/generate-custom-id`, { method: 'POST', headers: authHeaders() });
+      let data = await r.json();
+      out('out_deploy', data);
+      if (data && data.custom_client_id) document.getElementById('info_custom_id').textContent = data.custom_client_id;
+      // 2) token
+      r = await fetch(`/api/admin/client-config/client/${clientId}/generate-token`, { method: 'POST', headers: authHeaders() });
+      data = await r.json();
+      out('out_deploy', data);
+      if (data && data.deployment_api_token) document.getElementById('info_token').textContent = data.deployment_api_token;
+      // 3) deploy
+      r = await fetch(`/api/admin/client-config/client/${clientId}/deploy`, { method: 'POST', headers: authHeaders() });
+      data = await r.json();
+      out('out_deploy', data);
+    };
+
+    document.getElementById('btn_add_md').onclick = async () => {
+      const clientId = document.getElementById('kb_client_id').value;
+      const title = document.getElementById('kb_title').value;
+      const content = document.getElementById('kb_content').value;
+      const r = await fetch(`/api/admin/knowledge-base/client/${clientId}/add-markdown`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ title, content })
+      });
+      out('out_kb', await r.json());
+    };
+
+    document.getElementById('btn_create_user').onclick = async () => {
+      const clientId = document.getElementById('user_client_id').value;
+      const email = document.getElementById('user_email').value;
+      const password = document.getElementById('user_password').value;
+      const params = new URLSearchParams({ email, password });
+      const r = await fetch(`/admin/clients/${clientId}/users`, { method: 'POST', headers: authHeaders(), body: params });
+      const data = await r.json();
+      out('out_user', data);
+    };
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from typing import Optional, Dict, Any, List
-from app.models.lead import Lead, ChatSession, ChatHistory, EmailMessage, LeadStatus
+from app.models.lead import Lead, ChatSession, ChatHistory, LeadStatus
 from app.models.client import Client
 from app.database import get_db
 import uuid
@@ -170,28 +170,34 @@ class LeadService:
         
         return "\n".join(context_lines)
     
-    def create_email_message(self, lead_id: str, client_id: str, subject: str, message_text: str,
-                            is_outbound: bool = True, include_context: bool = True) -> EmailMessage:
-        """Create email message with chat context"""
+    def create_chat_message(self, lead_id: str, message_text: str, sender_type: str):
+        """Create a new chat message"""
+        chat_session = self.db.query(ChatSession).filter(
+            ChatSession.lead_id == lead_id
+        ).order_by(ChatSession.created_at.desc()).first()
         
-        chat_context = None
-        if include_context and is_outbound:
-            chat_context = self.get_chat_history_context(lead_id)
+        if not chat_session:
+            # Create a new chat session if none exists
+            chat_session = ChatSession(
+                lead_id=lead_id,
+                client_id=self.db.query(Lead.client_id).filter(Lead.lead_id == lead_id).scalar()
+            )
+            self.db.add(chat_session)
+            self.db.commit()
+            self.db.refresh(chat_session)
         
-        email_msg = EmailMessage(
-            lead_id=lead_id,
-            client_id=client_id,
-            subject=subject,
-            message_text=message_text,
-            is_outbound=is_outbound,
-            chat_context=chat_context
+        # Create the chat message
+        message = ChatHistory(
+            session_id=chat_session.session_id,
+            sender=sender_type,
+            message_text=message_text
         )
         
-        self.db.add(email_msg)
+        self.db.add(message)
         self.db.commit()
-        self.db.refresh(email_msg)
+        self.db.refresh(message)
         
-        return email_msg
+        return message
     
     def update_lead_status(self, lead_id: str, status: LeadStatus) -> Optional[Lead]:
         """Update lead status"""
@@ -211,27 +217,13 @@ class LeadService:
         
         return query.order_by(Lead.created_at.desc()).all()
     
-    def set_email_manual_override(self, lead_id: str, override: bool = True) -> Optional[Lead]:
-        """Set manual override for email messages"""
-        lead = self.db.query(Lead).filter(Lead.lead_id == lead_id).first()
-        if lead:
-            lead.email_manual_override = override
-            self.db.commit()
-            self.db.refresh(lead)
-        return lead
-    
-    def get_lead_with_email_history(self, lead_id: str) -> Optional[Dict[str, Any]]:
-        """Get lead with complete email message history"""
+    def get_lead_with_chat_history(self, lead_id: str) -> Optional[Dict[str, Any]]:
+        """Get lead with complete chat history"""
         lead = self.db.query(Lead).filter(Lead.lead_id == lead_id).first()
         if not lead:
             return None
         
-        email_messages = self.db.query(EmailMessage).filter(
-            EmailMessage.lead_id == lead_id
-        ).order_by(EmailMessage.created_at.asc()).all()
-        
         return {
             "lead": lead,
-            "email_messages": email_messages,
             "chat_context": self.get_chat_history_context(lead_id)
         }

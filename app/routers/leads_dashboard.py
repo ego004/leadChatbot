@@ -73,7 +73,6 @@ def get_client_leads(
         result.append({
             "lead_id": lead.lead_id,
             "name": lead.name or "Anonymous",
-            "email": lead.email,
             "phone_number": lead.phone_number,
             "status": lead.status.value,
             "whatsapp_manual_override": lead.whatsapp_manual_override,
@@ -133,7 +132,6 @@ def get_lead_conversation(
         "lead": {
             "lead_id": lead.lead_id,
             "name": lead.name or "Anonymous",
-            "email": lead.email,
             "phone_number": lead.phone_number,
             "status": lead.status.value,
             "whatsapp_manual_override": lead.whatsapp_manual_override,

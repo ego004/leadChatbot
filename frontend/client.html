@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Dashboard · LeadGenius</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#9ca3af; --text:#e5e7eb; --accent:#22c55e; --border:#1f2937; }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;background:linear-gradient(180deg,#0b1020,#0f172a);color:var(--text)}
+    header{padding:20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .brand{font-weight:700}
+    .container{max-width:1200px;margin:0 auto;padding:24px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .card{background:rgba(255,255,255,0.03);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:12px;padding:16px}
+    h1{font-size:22px;margin:0 0 4px}
+    h2{font-size:16px;margin:0 0 8px;color:#cbd5e1}
+    label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+    input,select,textarea{width:100%;background:#0b1020;border:1px solid var(--border);color:var(--text);padding:10px;border-radius:10px}
+    textarea{resize:vertical}
+    .btn{background:linear-gradient(180deg,#16a34a,#15803d);border:none;color:white;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:600}
+    .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .stack{display:flex;gap:8px;flex-wrap:wrap}
+    .muted{color:var(--muted);font-size:12px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid var(--border);text-align:left;font-size:14px}
+    tr:hover{background:rgba(255,255,255,0.03)}
+    .two{display:grid;grid-template-columns:1.2fr 0.8fr;gap:16px}
+    .hidden{display:none}
+    .tag{display:inline-block;padding:4px 8px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:#cbd5e1}
+    a{color:#93c5fd}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">LeadGenius · Client Dashboard</div>
+    <nav class="stack">
+      <a href="/admin-ui/admin.html">Admin Console</a>
+      <button class="btn" id="btn_logout">Logout</button>
+    </nav>
+  </header>
+
+  <div class="container">
+    <section class="card" id="login_card">
+      <h1>Sign in</h1>
+      <p class="muted">Use your email and password.</p>
+      <div class="row">
+        <div>
+          <label>Email</label>
+          <input id="email" placeholder="user@company.com" />
+        </div>
+        <div>
+          <label>Password</label>
+          <input id="password" type="password" placeholder="********" />
+        </div>
+      </div>
+      <label>Client ID (optional hint)</label>
+      <input id="client_hint" placeholder="UUID" />
+      <div class="stack" style="margin-top:10px">
+        <button class="btn" id="btn_login">Sign in</button>
+        <span class="muted" id="login_msg"></span>
+      </div>
+    </section>
+
+    <section class="card hidden" id="welcome_card">
+      <h1 id="welcome_title">Welcome</h1>
+      <div class="stack muted" id="deploy_info"></div>
+    </section>
+
+    <div class="two hidden" id="dash_grid">
+      <section class="card">
+        <h2>Activity</h2>
+        <canvas id="activityChart" height="160"></canvas>
+      </section>
+      <section class="card">
+        <h2>Totals</h2>
+        <div class="grid">
+          <div>
+            <div class="muted">Total Leads</div>
+            <div id="stat_total" style="font-weight:700;font-size:22px">—</div>
+          </div>
+          <div>
+            <div class="muted">New</div>
+            <div id="stat_new" style="font-weight:700;font-size:22px">—</div>
+          </div>
+          <div>
+            <div class="muted">Qualified</div>
+            <div id="stat_qualified" style="font-weight:700;font-size:22px">—</div>
+          </div>
+          <div>
+            <div class="muted">Contacted</div>
+            <div id="stat_contacted" style="font-weight:700;font-size:22px">—</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="two hidden" id="leads_grid" style="margin-top:16px">
+      <section class="card">
+        <div class="stack" style="justify-content:space-between;align-items:center">
+          <h2>Leads</h2>
+          <div class="stack">
+            <label class="muted" for="status_filter">Filter</label>
+            <select id="status_filter">
+              <option value="">All</option>
+              <option value="new">New</option>
+              <option value="qualified">Qualified</option>
+              <option value="contacted">Contacted</option>
+              <option value="unqualified">Unqualified</option>
+              <option value="converted">Converted</option>
+            </select>
+            <button class="btn" id="btn_refresh">Refresh</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Phone</th><th>Status</th><th>Created</th></tr>
+          </thead>
+          <tbody id="leads_tbody"></tbody>
+        </table>
+      </section>
+      <section class="card" id="lead_detail">
+        <h2>Conversation</h2>
+        <div id="lead_header" class="stack" style="align-items:center;justify-content:space-between">
+          <div id="lead_title" class="tag">Select a lead</div>
+          <div class="stack">
+            <select id="lead_status">
+              <option value="new">New</option>
+              <option value="qualified">Qualified</option>
+              <option value="contacted">Contacted</option>
+              <option value="unqualified">Unqualified</option>
+              <option value="converted">Converted</option>
+            </select>
+            <button class="btn" id="btn_update_status">Update</button>
+          </div>
+        </div>
+        <div id="conversation" style="margin-top:10px;max-height:420px;overflow:auto"></div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const LS_TOKEN = 'lg_client_token';
+    let token = localStorage.getItem(LS_TOKEN) || null;
+
+    const auth = () => token ? { 'Authorization': `Bearer ${token}` } : {};
+    const setHidden = (id, hidden) => { document.getElementById(id).classList.toggle('hidden', hidden); };
+
+    const fmt = (d) => new Date(d).toLocaleString();
+    const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+    async function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const client_id_hint = document.getElementById('client_hint').value;
+      const r = await fetch('/api/client/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password, client_id_hint }) });
+      const data = await r.json();
+      if (data && data.access_token) {
+        token = data.access_token; localStorage.setItem(LS_TOKEN, token);
+        document.getElementById('login_msg').textContent = '';
+        await loadDashboard();
+      } else {
+        document.getElementById('login_msg').textContent = (data && data.detail) ? data.detail : 'Login failed';
+      }
+    }
+
+    async function fetchJSON(url, opts={}) { const r = await fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...auth() } }); const ct = r.headers.get('content-type')||''; return ct.includes('application/json') ? r.json() : r.text(); }
+
+    async function loadDashboard() {
+      setHidden('login_card', true);
+      setHidden('welcome_card', false);
+      setHidden('dash_grid', false);
+      setHidden('leads_grid', false);
+
+      // Stats
+      const stats = await fetchJSON('/api/client/dashboard/stats');
+      if (stats && stats.stats) {
+        setText('stat_total', stats.stats.total_leads);
+        setText('stat_new', stats.stats.new_leads);
+        setText('stat_qualified', stats.stats.qualified_leads);
+        setText('stat_contacted', stats.stats.contacted_leads);
+        const di = document.getElementById('deploy_info');
+        di.innerHTML = '';
+        if (stats.deployment) {
+          if (stats.deployment.is_deployed) {
+            const a = document.createElement('span'); a.className='tag'; a.textContent = 'Deployed'; di.appendChild(a);
+          } else {
+            const a = document.createElement('span'); a.className='tag'; a.textContent = 'Not deployed'; di.appendChild(a);
+          }
+          if (stats.deployment.custom_client_id) { const s=document.createElement('span'); s.className='tag'; s.textContent = `CID: ${stats.deployment.custom_client_id}`; di.appendChild(s);}        
+        }
+      }
+
+      // Daily analytics -> chart
+      const daily = await fetchJSON('/api/client/analytics/daily?days=30');
+      const labels = (daily.daily||[]).map(d=>d.date);
+      const series = (daily.daily||[]).map(d=>d.messages_user + d.messages_bot);
+      const ctx = document.getElementById('activityChart');
+      new Chart(ctx, { type:'line', data: { labels, datasets: [{ label:'Messages', data: series, borderColor:'#22c55e', backgroundColor:'rgba(34,197,94,0.2)', tension:0.3 }] }, options: { plugins:{legend:{display:false}}, scales:{x:{ticks:{color:'#9ca3af'}}, y:{ticks:{color:'#9ca3af'}}} } });
+
+      // Leads
+      await loadLeads();
+    }
+
+    function leadRow(l) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${l.name||'Anonymous'}</td><td>${l.phone_number||''}</td><td><span class="tag">${l.status}</span></td><td>${fmt(l.created_at)}</td>`;
+      tr.style.cursor = 'pointer';
+      tr.onclick = () => openLead(l.lead_id, l.status, l.name);
+      return tr;
+    }
+
+    async function loadLeads() {
+      const f = document.getElementById('status_filter').value;
+      const data = await fetchJSON('/api/client/leads' + (f?`?status_filter=${encodeURIComponent(f)}`:''));
+      const tb = document.getElementById('leads_tbody');
+      tb.innerHTML = '';
+      (data.leads||[]).forEach(l=> tb.appendChild(leadRow(l)) );
+    }
+
+    async function openLead(lead_id, status, name) {
+      const d = await fetchJSON(`/api/client/leads/${encodeURIComponent(lead_id)}`);
+      document.getElementById('lead_title').textContent = `${name||'Anonymous'} · ${lead_id.substring(0,8)}`;
+      document.getElementById('lead_status').value = status;
+      const c = document.getElementById('conversation');
+      c.innerHTML = '';
+      const hist = (d.chat_history||[]);
+      hist.forEach(msg => {
+        const bubble = document.createElement('div');
+        bubble.style.padding = '10px';
+        bubble.style.margin = '6px 0';
+        bubble.style.border = '1px solid var(--border)';
+        bubble.style.borderRadius = '10px';
+        bubble.style.background = msg.sender === 'user' ? 'rgba(255,255,255,0.02)' : 'rgba(34,197,94,0.08)';
+        bubble.innerHTML = `<div class="muted" style="margin-bottom:4px">${msg.sender} · ${fmt(msg.timestamp)}</div><div>${msg.message}</div>`;
+        c.appendChild(bubble);
+      });
+      c.scrollTop = c.scrollHeight;
+      c.dataset.currentLead = lead_id;
+    }
+
+    async function updateStatus() {
+      const lead_id = document.getElementById('conversation').dataset.currentLead;
+      if (!lead_id) return;
+      const status = document.getElementById('lead_status').value;
+      const r = await fetch(`/api/client/leads/${encodeURIComponent(lead_id)}/status?status=${encodeURIComponent(status)}`, { method: 'PUT', headers: auth() });
+      const data = await r.json();
+      await loadLeads();
+    }
+
+    document.getElementById('btn_login').onclick = login;
+    document.getElementById('btn_refresh').onclick = loadLeads;
+    document.getElementById('btn_update_status').onclick = updateStatus;
+    document.getElementById('btn_logout').onclick = () => { localStorage.removeItem(LS_TOKEN); token=null; location.reload(); };
+
+    // Auto-resume session
+    (async () => { if (token) { try { await loadDashboard(); } catch { localStorage.removeItem(LS_TOKEN); } } })();
+  </script>
+</body>
+</html>

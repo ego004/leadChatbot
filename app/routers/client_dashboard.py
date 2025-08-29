@@ -1,14 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.client import Client
 from app.models.client_user import ClientUser
-from app.models.lead import Lead, LeadStatus, EmailMessage
+from app.models.lead import Lead, LeadStatus
 from app.models.knowledge_base import ClientDeployment
 from app.services.lead_service import LeadService
-from app.services.email_service import EmailService
-from app.schemas.email_chat import EmailMessage as EmailMessageSchema
 from typing import Optional, List
 from datetime import datetime, timedelta, date
 from sqlalchemy import func
@@ -17,9 +15,11 @@ import jwt
 import os
 from app.config import settings
 from passlib.hash import bcrypt
+import logging
 
 router = APIRouter(prefix="/api/client", tags=["Client Dashboard"])
 security = HTTPBearer()
+logger = logging.getLogger(__name__)
 
 # Use application settings (loaded from .env via pydantic) for JWT configuration
 # This ensures consistency with tokens minted by scripts/tests using the same secret
@@ -50,59 +50,66 @@ def verify_client_token(credentials: HTTPAuthorizationCredentials = Depends(secu
 
 @router.post("/login")
 async def client_login(
-    email: str | None = None,
-    password: str | None = None,
-    client_id_hint: str | None = None,
-    company_name: str | None = None,  # backward compatibility
-    contact_email: str | None = None, # backward compatibility
+    request: Request,
+    email: Optional[str] = Form(None),
+    password: Optional[str] = Form(None),
+    client_id_hint: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    """Client dashboard login.
-    Preferred: email + password (optionally client_id_hint to disambiguate).
-    Backward-compat: company_name + contact_email (no password).
-    """
+    """Client user login with email and password only."""
+    try:
+        # Try to get login data from JSON if not in form
+        if (email is None) or password is None:
+            try:
+                data = await request.json()
+                if isinstance(data, dict):
+                    email = email or data.get("email")
+                    password = password or data.get("password")
+                    client_id_hint = client_id_hint or data.get("client_id_hint")
+            except Exception:
+                pass
+                
+        # Validate required fields
+        if (not email) or not password:
+            missing = []
+            if not email:
+                missing.append("email")
+            if not password:
+                missing.append("password")
+            raise HTTPException(
+                status_code=422,
+                detail=f"Missing required fields: {', '.join(missing)}"
+            )
 
-    # Preferred path: email/password
-    if email and password:
-        query = db.query(ClientUser).filter(ClientUser.email == email)
+        # Lookup by email (optionally constrained by client_id_hint)
         if client_id_hint:
-            query = query.filter(ClientUser.client_id == client_id_hint)
-        users = query.all()
-        if not users:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        if len(users) > 1 and not client_id_hint:
-            raise HTTPException(status_code=400, detail="Multiple accounts found for this email; provide client_id_hint")
-        user = users[0]
-        if not user.is_active:
-            raise HTTPException(status_code=403, detail="User is inactive")
-        if not bcrypt.verify(password, user.password_hash):
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        access_token = create_access_token(str(user.client_id))
-        client = db.query(Client).filter(Client.client_id == str(user.client_id)).first()
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "client_id": str(user.client_id),
-            "company_name": client.name if client else None
-        }
+            user = db.query(ClientUser).filter(
+                ClientUser.client_id == client_id_hint,
+                ClientUser.email == email,
+                ClientUser.is_active == True
+            ).first()
+        else:
+            user = db.query(ClientUser).filter(
+                ClientUser.email == email,
+                ClientUser.is_active == True
+            ).first()
 
-    # Fallback legacy path: company_name + contact_email
-    if company_name and contact_email:
-        client = db.query(Client).filter(
-            Client.name == company_name,
-            Client.contact_email == contact_email
-        ).first()
-        if not client:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-        access_token = create_access_token(str(client.client_id))
-        return {
-            "access_token": access_token,
-            "token_type": "bearer",
-            "client_id": str(client.client_id),
-            "company_name": client.name
-        }
-
-    raise HTTPException(status_code=400, detail="Provide email/password or company_name/contact_email")
+        if not user or not bcrypt.verify(password, user.password_hash):
+            raise HTTPException(status_code=401, detail="Incorrect credentials")
+            
+        # Create access token (sub=client_id)
+        access_token = create_access_token(
+            str(user.client_id),
+            expires_delta=timedelta(hours=24)
+        )
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Login error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/leads")
 async def get_client_leads(
@@ -124,22 +131,15 @@ async def get_client_leads(
     
     leads = lead_service.get_leads_for_client(client_id, status_enum)
     
-    # Format leads with additional info
-    formatted_leads = []
-    for lead in leads:
-        lead_data = lead_service.get_lead_with_email_history(str(lead.lead_id))
-        formatted_leads.append({
-            "lead_id": str(lead.lead_id),
-            "name": lead.name,
-            "email": lead.email,
-            "phone_number": lead.phone_number,
-            "status": lead.status.value,
-            "email_manual_override": lead.email_manual_override,
-            "created_at": lead.created_at,
-            "updated_at": lead.updated_at,
-            "email_messages_count": len(lead_data["email_messages"]) if lead_data else 0,
-            "last_email_sent": lead.last_email_sent
-        })
+    # Format leads
+    formatted_leads = [{
+        "lead_id": str(lead.lead_id),
+        "name": lead.name,
+        "phone_number": lead.phone_number,
+        "status": lead.status.value,
+        "created_at": lead.created_at,
+        "updated_at": lead.updated_at
+    } for lead in leads]
     
     return {
         "leads": formatted_leads,
@@ -164,7 +164,6 @@ async def get_lead_details(
         raise HTTPException(status_code=404, detail="Lead not found")
     
     lead_service = LeadService(db)
-    lead_data = lead_service.get_lead_with_email_history(lead_id)
     
     # Get chat history
     chat_context = lead_service.get_chat_history_context(lead_id, limit=50)
@@ -173,97 +172,12 @@ async def get_lead_details(
         "lead": {
             "lead_id": str(lead.lead_id),
             "name": lead.name,
-            "email": lead.email,
             "phone_number": lead.phone_number,
             "status": lead.status.value,
-            "email_manual_override": lead.email_manual_override,
             "created_at": lead.created_at,
             "updated_at": lead.updated_at
         },
-        "chat_history": chat_context,
-        "email_messages": [
-            {
-                "message_id": str(msg.message_id),
-                "subject": msg.subject,
-                "message_text": msg.message_text,
-                "is_outbound": msg.is_outbound,
-                "status": msg.status,
-                "created_at": msg.created_at
-            }
-            for msg in lead_data["email_messages"]
-        ] if lead_data else []
-    }
-
-@router.post("/leads/{lead_id}/send-email")
-async def send_manual_email(
-    lead_id: str,
-    subject: str,
-    message: str,
-    client_id: str = Depends(verify_client_token),
-    db: Session = Depends(get_db)
-):
-    """Send manual email to lead"""
-    
-    # Verify lead belongs to client
-    lead = db.query(Lead).filter(
-        Lead.lead_id == lead_id,
-        Lead.client_id == client_id
-    ).first()
-    
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    
-    if not lead.email:
-        raise HTTPException(status_code=400, detail="Lead has no email address")
-    
-    # Send email
-    email_service = EmailService(db)
-    result = email_service.send_email(
-        to_email=lead.email,
-        subject=subject,
-        message=message,
-        lead_id=lead_id,
-        client_id=client_id
-    )
-    
-    if result["success"]:
-        # Update lead's last email sent
-        lead.last_email_sent = message
-        db.commit()
-        
-        return {
-            "success": True,
-            "message": "Email sent successfully",
-            "message_id": result["message_id"]
-        }
-    else:
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {result['error']}")
-
-@router.post("/leads/{lead_id}/toggle-manual-override")
-async def toggle_email_manual_override(
-    lead_id: str,
-    enable: bool,
-    client_id: str = Depends(verify_client_token),
-    db: Session = Depends(get_db)
-):
-    """Enable/disable manual override for email automation"""
-    
-    # Verify lead belongs to client
-    lead = db.query(Lead).filter(
-        Lead.lead_id == lead_id,
-        Lead.client_id == client_id
-    ).first()
-    
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    
-    lead_service = LeadService(db)
-    updated_lead = lead_service.set_email_manual_override(lead_id, enable)
-    
-    return {
-        "success": True,
-        "message": f"Manual override {'enabled' if enable else 'disabled'}",
-        "email_manual_override": updated_lead.email_manual_override
+        "chat_history": chat_context
     }
 
 @router.put("/leads/{lead_id}/status")
@@ -326,31 +240,12 @@ async def get_dashboard_stats(
         ClientDeployment.client_id == client_id
     ).first()
 
-    # Get email stats for the last 30 days
-    start_date = datetime.utcnow() - timedelta(days=30)
-    total_emails = db.query(EmailMessage).join(Lead).filter(
-        Lead.client_id == client_id,
-        EmailMessage.created_at >= start_date
-    ).count()
-    outbound_emails = db.query(EmailMessage).join(Lead).filter(
-        Lead.client_id == client_id,
-        EmailMessage.created_at >= start_date,
-        EmailMessage.is_outbound == True
-    ).count()
-    active_conversations = db.query(Lead).join(EmailMessage).filter(
-        Lead.client_id == client_id,
-        EmailMessage.created_at >= start_date
-    ).distinct().count()
-    
     return {
         "stats": {
             "total_leads": total_leads,
             "new_leads": new_leads,
             "qualified_leads": qualified_leads,
             "contacted_leads": contacted_leads,
-            "emails_sent_30d": outbound_emails,
-            "emails_received_30d": total_emails - outbound_emails,
-            "active_conversations_30d": active_conversations
         },
         "deployment": {
             "is_deployed": deployment.is_deployed if deployment else False,
@@ -478,23 +373,3 @@ async def analytics_daily(
         "timeframe": {"start_date": start_d.isoformat(), "end_date": end_d.isoformat()},
         "daily": series,
     }
-
-@router.get("/leads/{lead_id}/conversation", response_model=List[EmailMessageSchema])
-async def get_lead_conversation(
-    lead_id: str,
-    client_id: str = Depends(verify_client_token),
-    db: Session = Depends(get_db)
-):
-    """Get the full email conversation history for a lead."""
-    # Verify lead belongs to client
-    lead = db.query(Lead).filter(
-        Lead.lead_id == lead_id,
-        Lead.client_id == client_id
-    ).first()
-    
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    
-    messages = db.query(EmailMessage).filter(EmailMessage.lead_id == lead_id).order_by(EmailMessage.created_at.asc()).all()
-    
-    return messages

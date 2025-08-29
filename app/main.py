@@ -1,23 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import admin, client_config, knowledge_base, chat, client_dashboard, leads_dashboard, email_chat, automation, auth
+from app.routers import admin, client_config, knowledge_base, chat, client_dashboard, leads_dashboard, automation, auth
 from app.routers.ingestion import router as ingestion_router
-from app.database import engine, Base
+from app.database import engine, Base, ensure_tables
 from app.services.db_migrations import run_lightweight_migrations
-from app.services.email_monitor import start_email_monitoring
-import asyncio
 from app.models import analytics  # ensure ClientDailyStats is registered
 from app.models import client_user  # ensure ClientUser is registered
 from app.services.vector_store_service import preload_embeddings
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
-# Run lightweight migrations to ensure new columns exist
-try:
-    run_lightweight_migrations(engine)
-except Exception as e:
-    print(f"⚠️ Lightweight migrations failed: {e}")
+# Avoid destructive operations at import time; ensure tables will be created on startup
 
 # Create FastAPI app
 app = FastAPI(
@@ -41,8 +33,8 @@ app.include_router(knowledge_base.router)
 app.include_router(client_config.router)
 app.include_router(chat.router)
 app.include_router(client_dashboard.router)
+app.include_router(leads_dashboard.router)
 app.include_router(automation.router)
-app.include_router(email_chat.router)
 app.include_router(auth.router)
 app.include_router(ingestion_router)
 
@@ -53,13 +45,18 @@ app.mount("/admin-ui", StaticFiles(directory="frontend", html=True), name="admin
 async def startup_event():
     """Start background services on app startup"""
     try:
+        # Ensure DB tables exist (non-destructive)
+        ensure_tables()
+        try:
+            # Run lightweight in-code migrations (add missing columns, etc.)
+            run_lightweight_migrations(engine)
+        except Exception as e:
+            print(f"⚠️ Lightweight migrations failed: {e}")
         # Warm embeddings model to avoid first-request latency
         preload_embeddings()
         print("✅ Embeddings preloaded")
-        await start_email_monitoring()
-        print("✅ Email monitoring service started")
     except Exception as e:
-        print(f"⚠️ Failed to start email monitoring: {e}")
+        print(f"⚠️ Failed to preload embeddings: {e}")
 
 @app.get("/")
 def read_root():

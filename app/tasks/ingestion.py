@@ -8,6 +8,7 @@ from app.services.llm_filter import markdown_filter
 from app.services.llm import llm_service
 import asyncio
 import os
+import uuid
 
 
 def get_db_session():
@@ -64,6 +65,11 @@ def task_clean(scrape_result, prompt: str | None = None, use_filter: bool = True
     try:
         client_id = scrape_result["client_id"]
         file_paths = scrape_result["file_paths"]
+        # Reset per-client LLM memory at the start of a cleaning run to avoid cross-run carryover
+        try:
+            markdown_filter.reset_client_memory(client_id)
+        except Exception:
+            pass
         
         # Read individual markdown files
         markdowns = []
@@ -129,45 +135,58 @@ def task_chunk_and_embed(clean_result):
         if not client:
             raise Exception(f"Client {client_id} not found")
         
-        # Store markdowns in Supabase Storage
-        if supabase_storage.is_available():
-            # Delete existing markdowns
-            supabase_storage.delete_all_client_markdowns(client_id)
-            
-            # Upload new markdowns
-            for md in markdowns:
-                supabase_storage.upload_markdown(
-                    client_id=client_id,
-                    filename=md["filename"],
-                    content=md["content"]
-                )
-        
-        # Store in database as backup
+        # Supabase Storage is the source of truth. Remove all existing blobs for client and re-upload.
+        supabase_storage.delete_all_client_markdowns(client_id)
+
+        # Database holds metadata only (no full content). Clear existing documents for client.
         from app.models.knowledge_base import KnowledgeDocument
-        # Delete existing documents
         db.query(KnowledgeDocument).filter(KnowledgeDocument.client_id == client_id).delete()
-        
-        # Add new documents
+
+        # Track created docs for vector indexing
+        created_docs: list[tuple[str, str | None, str]] = []  # (document_id, source_url, content)
+
+        # Create KB entries with deterministic storage filenames by document_id and upload full content
         for md in markdowns:
-            doc = KnowledgeDocument(
+            # Derive a reasonable title: first H1 if present, else filename without .md
+            title = md.get("filename", "").replace(".md", "") or (md["content"].splitlines()[0].strip("# ") if md.get("content") else "Document")
+            source_url = md.get("source_url")
+            content = md["content"]
+
+            doc_id = str(uuid.uuid4())
+            filename = f"{doc_id}.md"
+
+            # Upload full content to Supabase Storage
+            supabase_storage.upload_markdown(
                 client_id=client_id,
-                title=md["filename"].replace(".md", ""),
-                content=md["content"],
-                source_url=md.get("source_url")
+                filename=filename,
+                content=content,
+            )
+
+            # Persist metadata-only record in DB
+            doc = KnowledgeDocument(
+                document_id=doc_id,
+                client_id=client_id,
+                title=title,
+                content=None,
+                content_preview=content[:2000],
+                storage_path=f"{client_id}/markdowns/{filename}",
+                source_url=source_url,
             )
             db.add(doc)
-        
-        # Rebuild vector store using the same collection naming as KB endpoints
-        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
-        vector_store.delete_collection()  # Clear old vectors
+            created_docs.append((doc_id, source_url, content))
 
-        # Add new documents with metadata
-        for md in markdowns:
+        # Rebuild vector store for client
+        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store.delete_collection()
+
+        # Index with rich metadata
+        for (doc_id, source_url, content) in created_docs:
             doc_metadata = {
-                "filename": md.get("filename", ""),
-                "source_url": md.get("source_url", "")
+                "document_id": doc_id,
+                "client_id": client_id,
+                "source_url": source_url or "",
             }
-            vector_store.add_text(md["content"], metadata=doc_metadata)
+            vector_store.add_text(content, metadata=doc_metadata)
         
         # Update status to completed
         client.ingestion_status = IngestionStatus.COMPLETED
@@ -220,6 +239,11 @@ def _scrape_sync(client_id: str, max_depth: int = 3):
             file_paths = loop.run_until_complete(
                 crawl_website(client.website_url, max_depth=max_depth)
             )
+            # Fail fast if nothing was scraped
+            if not file_paths:
+                print(f"[INGEST] _scrape_sync: 0 pages scraped for client={client_id}, url={client.website_url}")
+                raise Exception("No pages scraped from website. Check website_url or crawler settings.")
+
             return {
                 "client_id": client_id,
                 "file_paths": file_paths,
@@ -242,6 +266,12 @@ def _clean_sync(scrape_result: dict, prompt: str | None = None, use_filter: bool
     try:
         client_id = scrape_result["client_id"]
         file_paths = scrape_result["file_paths"]
+
+        # Reset per-client LLM memory at the start of a cleaning run to avoid cross-run carryover
+        try:
+            markdown_filter.reset_client_memory(client_id)
+        except Exception:
+            pass
 
         markdowns = []
         for file_path in file_paths:
@@ -301,32 +331,66 @@ def _chunk_and_embed_sync(clean_result: dict):
         if not client:
             raise Exception(f"Client {client_id} not found")
 
-        # Store markdowns in Supabase Storage
-        if supabase_storage.is_available():
-            supabase_storage.delete_all_client_markdowns(client_id)
-            for md in markdowns:
-                supabase_storage.upload_markdown(
-                    client_id=client_id, filename=md["filename"], content=md["content"]
-                )
+        # If no markdowns were produced, fail fast
+        if not markdowns:
+            print(f"[INGEST] _chunk_and_embed_sync: 0 markdowns to index for client={client_id}")
+            raise Exception("No markdowns generated from crawl/clean phases.")
 
-        # Store in database as backup
+        # Supabase Storage is the source of truth: clear and re-upload under document_id filenames
+        try:
+            supabase_storage.delete_all_client_markdowns(client_id)
+        except Exception:
+            pass
+
+        # Reset DB metadata for client
         from app.models.knowledge_base import KnowledgeDocument
         db.query(KnowledgeDocument).filter(KnowledgeDocument.client_id == client_id).delete()
+
+        created: list[tuple[str, str | None, str]] = []  # (document_id, source_url, content)
         for md in markdowns:
+            content = md["content"]
+            source_url = md.get("source_url")
+            title = (md.get("filename") or "document.md").replace(".md", "")
+
+            doc_id = str(uuid.uuid4())
+            filename = f"{doc_id}.md"
+
+            # Upload full content to storage
+            try:
+                supabase_storage.upload_markdown(client_id=client_id, filename=filename, content=content)
+            except Exception:
+                pass
+
+            # Persist metadata-only record
             doc = KnowledgeDocument(
+                document_id=doc_id,
                 client_id=client_id,
-                title=md["filename"].replace(".md", ""),
-                content=md["content"],
-                source_url=md.get("source_url"),
+                title=title,
+                content=None,
+                content_preview=content[:2000],
+                storage_path=f"{client_id}/markdowns/{filename}",
+                source_url=source_url,
             )
             db.add(doc)
+            created.append((doc_id, source_url, content))
 
         # Vector store build (aligned collection name)
         vector_store = VectorStoreService(collection_name=f"client_{client_id}")
         vector_store.delete_collection()
-        for md in markdowns:
-            doc_metadata = {"filename": md.get("filename", ""), "source_url": md.get("source_url", "")}
-            vector_store.add_text(md["content"], metadata=doc_metadata)
+        # Strictly re-download content from Supabase Storage to index, ensuring Storage is the sole source
+        for (doc_id, source_url, _content) in created:
+            try:
+                filename = f"{doc_id}.md"
+                content = supabase_storage.download_markdown(client_id, filename)
+            except Exception:
+                content = None
+            if not content:
+                continue
+            vector_store.add_text(content, metadata={
+                "document_id": doc_id,
+                "client_id": client_id,
+                "source_url": source_url or "",
+            })
 
         client.ingestion_status = IngestionStatus.COMPLETED
         db.commit()

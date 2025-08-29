@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import settings
 
@@ -7,6 +7,9 @@ from app.config import settings
 class MarkdownFilter:
     def __init__(self):
         self.llm = None
+        # Per-client, in-process memory of previously retained content (simple buffer)
+        # key: client_id (str) -> value: concatenated markdown retained so far (str)
+        self._memory: Dict[str, str] = {}
         
         # Only initialize if Google API key is available
         if hasattr(settings, 'google_api_key') and settings.google_api_key:
@@ -42,15 +45,27 @@ class MarkdownFilter:
         filtered = []
         for md in markdowns:
             try:
-                prompt = self._build_prompt(md['content'], user_prompt)
+                client_id = md.get('client_id') or ""
+                prev_context = self._memory.get(client_id, "") if client_id else ""
+                prompt = self._build_prompt(md['content'], user_prompt, prev_context)
                 # Stateless per-document call to avoid memory bleed across pages
                 result = self.llm.predict(prompt)
                 
                 # Only keep if LLM returns markdown (not NULL)
                 if result.strip().upper() != "NULL":
+                    # Drop if output is totally contained within prior retained context
+                    prior = self._memory.get(client_id, "") if client_id else ""
+                    out = result.strip()
+                    if prior and out and out in prior:
+                        # Considered duplicate; skip keeping
+                        continue
                     # Replace content with LLM's improved markdown output
                     md['content'] = result.strip()
                     filtered.append(md)
+                    # Update memory buffer (truncate to last ~8k chars)
+                    if client_id:
+                        updated = (prior + "\n" + out) if prior else out
+                        self._memory[client_id] = updated[-8000:]
                 
             except Exception as e:
                 print(f"Error filtering markdown {md.get('filename', 'unknown')}: {e}")
@@ -59,17 +74,32 @@ class MarkdownFilter:
         
         return filtered
     
-    def _build_prompt(self, markdown_content: str, user_prompt: str) -> str:
+    def _build_prompt(self, markdown_content: str, user_prompt: str, prev_context: Optional[str] = None) -> str:
         """Build prompt for LLM filtering"""
+        prev_section = (
+            "\nAlready kept content (do NOT repeat any overlapping content; if your output would be entirely repetitive, return 'NULL'):\n"
+            f"{prev_context}\n"
+            if prev_context and prev_context.strip() else ""
+        )
         return (
             f"You are an expert at extracting information from websites for a retrieval-augmented generation (RAG) chatbot. "
             f"Your job is to filter and summarize markdown content. "
             f"The user request is: {user_prompt}\n"
             f"Given the following markdown content, extract ONLY the sections that directly answer the user request. "
-            f"If there is relevant information, return ONLY the relevant markdown (no prose, no explanation, just markdown, no repetition). "
-            f"If nothing is relevant, return 'NULL'.\n\n"
+            f"Rules: return ONLY markdown, no prose/explanations; STRICTLY avoid repeating any content already kept; if fully repetitive, return 'NULL'."
+            f"{prev_section}\n"
             f"Markdown Content:\n{markdown_content}\n"
         )
+
+    # Memory management helpers
+    def reset_client_memory(self, client_id: str) -> None:
+        """Reset memory buffer for a specific client."""
+        if client_id in self._memory:
+            del self._memory[client_id]
+
+    def reset_all_memory(self) -> None:
+        """Reset all memory buffers."""
+        self._memory.clear()
 
 
 # Global instance

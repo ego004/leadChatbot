@@ -237,7 +237,6 @@ def get_client_details(
                 "email": lead.email,
                 "phone_number": lead.phone_number,
                 "status": lead.status.value,
-                "email_manual_override": lead.email_manual_override,
                 "created_at": lead.created_at
             } for lead in leads
         ]

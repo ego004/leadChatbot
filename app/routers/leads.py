@@ -65,7 +65,6 @@ def get_lead_detail(
         lead_id=lead.lead_id,
         client_id=lead.client_id,
         name=lead.name,
-        email=lead.email,
         phone_number=lead.phone_number,
         status=lead.status,
         created_at=lead.created_at,

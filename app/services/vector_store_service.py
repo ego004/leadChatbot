@@ -39,8 +39,8 @@ class VectorStoreService:
         self.collection_name = collection_name
         self.table_name = table_name
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=100,
+            chunk_size=500,
+            chunk_overlap=80,
         )
 
         # Embeddings: enforce SentenceTransformers only and reuse singleton

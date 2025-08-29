@@ -102,7 +102,15 @@ async def add_markdown_content(
 
     # Index into vector database using the full content from request
     vector_store = VectorStoreService(collection_name=f"client_{client_id}")
-    vector_store.add_text(req_content, metadata={"document_id": str(kb_entry.document_id)})
+    vector_store.add_text(
+        req_content,
+        metadata={
+            "document_id": str(kb_entry.document_id),
+            "client_id": client_id,
+            "title": req_title,
+            "source_url": "",
+        },
+    )
 
     return {
         "success": True,
@@ -147,7 +155,15 @@ async def update_markdown_content(
             vector_store.delete_by_document_id(str(kb_entry.document_id))
         except Exception:
             pass
-        vector_store.add_text(content, metadata={"document_id": str(kb_entry.document_id)})
+        vector_store.add_text(
+            content,
+            metadata={
+                "document_id": str(kb_entry.document_id),
+                "client_id": str(kb_entry.client_id),
+                "title": kb_entry.title,
+                "source_url": kb_entry.source_url or "",
+            },
+        )
     
     db.commit()
     db.refresh(kb_entry)
@@ -233,7 +249,15 @@ async def upload_markdown_file(
         
         # Update vector database
         vector_store = VectorStoreService(collection_name=f"client_{client_id}")
-        vector_store.add_text(content_str, metadata={"document_id": str(kb_entry.document_id)})
+        vector_store.add_text(
+            content_str,
+            metadata={
+                "document_id": str(kb_entry.document_id),
+                "client_id": client_id,
+                "title": file.filename,
+                "source_url": "",
+            },
+        )
         
         return {
             "success": True,
@@ -265,7 +289,7 @@ async def rebuild_vector_database(client_id: str, db: Session = Depends(get_db))
         vector_store = VectorStoreService(collection_name=f"client_{client_id}")
         vector_store.delete_collection() # Clear old vectors
         
-        # Add all documents back to the store (prefer Supabase blobs; fallback to legacy DB content)
+        # Add all documents back to the store (read exclusively from Supabase Storage)
         for entry in kb_entries:
             try:
                 filename = f"{entry.document_id}.md"
@@ -273,10 +297,16 @@ async def rebuild_vector_database(client_id: str, db: Session = Depends(get_db))
             except Exception:
                 content = None
             if not content:
-                content = entry.content  # backward compatibility
-            if not content:
                 continue
-            vector_store.add_text(content, metadata={"document_id": str(entry.document_id)})
+            vector_store.add_text(
+                content,
+                metadata={
+                    "document_id": str(entry.document_id),
+                    "client_id": str(entry.client_id),
+                    "title": entry.title,
+                    "source_url": entry.source_url or "",
+                },
+            )
         
         return {
             "success": True,
