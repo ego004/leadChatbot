@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>LeadGenius Admin UI (Minimal)</title>
+  <title>LeadGenius · Dashboards & Tools</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #222; }
     h1 { font-size: 22px; margin-bottom: 8px; }
@@ -18,11 +18,29 @@
   </style>
 </head>
 <body>
-  <h1>LeadGenius Admin UI (Minimal)</h1>
-  <p>Quickly exercise the main admin flows. This is a simple helper for local testing.</p>
+  <h1>LeadGenius Dashboards & Tools</h1>
+  <p>Choose where you want to go. The legacy advanced admin tools are kept below.</p>
+
+  <div class="card" style="border:2px solid #10b981;">
+    <h2 style="margin-top:0">Quick Links</h2>
+    <div class="row">
+      <div>
+        <h3 style="margin:6px 0">Admin Console</h3>
+        <p style="margin:0 0 8px;color:#374151">Create clients, deploy, add knowledge base, and create dashboard users.</p>
+        <a href="/admin-ui/admin.html"><button>Open Admin Console</button></a>
+      </div>
+      <div>
+        <h3 style="margin:6px 0">Client Dashboard</h3>
+        <p style="margin:0 0 8px;color:#374151">Login to view stats, leads, and conversations. Update lead statuses.</p>
+        <a href="/admin-ui/client.html"><button>Open Client Dashboard</button></a>
+      </div>
+    </div>
+  </div>
 
   <div class="card">
-    <h2>0) Admin Login</h2>
+    <h2>Legacy Admin Tools (Advanced)</h2>
+    <p style="margin-top:-4px;color:#374151">These endpoints mirror the API for power users and testing.</p>
+    <h2 style="margin-top:12px">0) Admin Login</h2>
     <label>Admin Email</label>
     <input id="admin_email" placeholder="admin@example.com" />
     <label>Admin Password</label>

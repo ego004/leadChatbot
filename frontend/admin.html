@@ -28,7 +28,8 @@
     pre{background:#0b1020;border:1px solid var(--border);padding:10px;border-radius:10px;overflow:auto}
     .muted{color:var(--muted);font-size:12px}
     .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .chip{display:inline-block;padding:6px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:#cbd5e1}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:#cbd5e1}
+    .icon-btn{background:#0b1020;border:1px solid var(--border);color:#93c5fd;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:12px}
     a{color:#93c5fd}
   </style>
 </head>
@@ -78,11 +79,15 @@
       <aside class="card">
         <h2>Status</h2>
         <div class="muted">Client ID</div>
-        <div id="info_client_id" class="chip" style="margin:6px 0">—</div>
+        <div class="chip" style="margin:6px 0"><span id="info_client_id">—</span><button class="icon-btn" data-copy="info_client_id">Copy</button></div>
         <div class="muted">Custom Client ID</div>
-        <div id="info_custom_id" class="chip" style="margin:6px 0">—</div>
+        <div class="chip" style="margin:6px 0"><span id="info_custom_id">—</span><button class="icon-btn" data-copy="info_custom_id">Copy</button></div>
         <div class="muted">Deployment Token</div>
-        <div id="info_token" class="chip" style="margin:6px 0">—</div>
+        <div class="chip" style="margin:6px 0"><span id="info_token">—</span><button class="icon-btn" data-copy="info_token">Copy</button></div>
+        <div class="stack" style="margin-top:8px">
+          <button class="btn secondary" id="btn_get_deployment">Get Deployment</button>
+        </div>
+        <pre id="out_get_deployment" style="margin-top:10px"></pre>
       </aside>
     </div>
 
@@ -110,6 +115,53 @@ Email: sales@example.com</textarea>
         <button class="btn" id="btn_add_md">Add Content</button>
       </div>
       <pre id="out_kb" style="margin-top:10px"></pre>
+    </section>
+
+    <section class="card">
+      <h2>4b) Deployment Settings</h2>
+      <div class="row">
+        <div>
+          <label>Client ID</label>
+          <input id="dep_client_id" placeholder="Client ID" />
+        </div>
+        <div>
+          <label>API Token (manual override)</label>
+          <div class="stack">
+            <input id="dep_api_token" placeholder="Paste token" />
+            <button class="btn secondary" id="btn_set_token">Set Token</button>
+          </div>
+        </div>
+      </div>
+      <label>Website System Prompt</label>
+      <textarea id="dep_website_system_prompt" rows="4" placeholder="You are a helpful AI assistant..."></textarea>
+      <label>Website Welcome Message</label>
+      <input id="dep_welcome_message" placeholder="Welcome!" />
+      <label>Email System Prompt</label>
+      <textarea id="dep_email_system_prompt" rows="3" placeholder="You are a helpful AI sales assistant..."></textarea>
+      <label>Email Welcome Message</label>
+      <input id="dep_email_welcome_message" placeholder="Thanks for reaching out!" />
+      <div class="stack" style="margin-top:10px">
+        <button class="btn secondary" id="btn_load_prompts">Load Current</button>
+        <button class="btn" id="btn_save_prompts">Save Prompts</button>
+      </div>
+      <pre id="out_dep" style="margin-top:10px"></pre>
+    </section>
+
+    <section class="card">
+      <h2>4c) Knowledge Base Tools</h2>
+      <div class="row">
+        <div>
+          <label>Client ID</label>
+          <input id="kb2_client_id" placeholder="Client ID" />
+        </div>
+        <div style="align-self:end">
+          <div class="stack">
+            <button class="btn" id="btn_ingest">Ingest Website</button>
+            <button class="btn secondary" id="btn_rebuild">Rebuild Vectors</button>
+          </div>
+        </div>
+      </div>
+      <pre id="out_kb_tools" style="margin-top:10px"></pre>
     </section>
 
     <section class="card">
@@ -153,6 +205,7 @@ Email: sales@example.com</textarea>
       b.style.color = ok ? '#86efac' : '#cbd5e1';
     };
     const authHeaders = () => (adminToken ? { 'Authorization': `Bearer ${adminToken}` } : {});
+    const copyText = async (text) => { try { await navigator.clipboard.writeText(text); } catch {} };
 
     document.getElementById('btn_admin_login').onclick = async () => {
       const email = document.getElementById('admin_email').value;
@@ -176,6 +229,8 @@ Email: sales@example.com</textarea>
       if (data && data.client_id) {
         document.getElementById('info_client_id').textContent = data.client_id;
         document.getElementById('kb_client_id').value = data.client_id;
+        document.getElementById('dep_client_id').value = data.client_id;
+        document.getElementById('kb2_client_id').value = data.client_id;
         document.getElementById('user_client_id').value = data.client_id;
       }
     };
@@ -207,6 +262,74 @@ Email: sales@example.com</textarea>
         method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ title, content })
       });
       out('out_kb', await r.json());
+    };
+
+    // Copy buttons
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t && t.matches('[data-copy]')) {
+        const id = t.getAttribute('data-copy');
+        const el = document.getElementById(id);
+        if (el) copyText(el.textContent || '');
+      }
+    });
+
+    // Deployment fetch
+    document.getElementById('btn_get_deployment').onclick = async () => {
+      const clientId = document.getElementById('info_client_id').textContent || document.getElementById('dep_client_id').value;
+      if (!clientId) return out('out_get_deployment', { error: 'Missing client id' });
+      const r = await fetch(`/api/admin/client-config/client/${clientId}/deployment`, { headers: authHeaders() });
+      out('out_get_deployment', await r.json());
+    };
+
+    // Prompts load/save
+    document.getElementById('btn_load_prompts').onclick = async () => {
+      const clientId = document.getElementById('dep_client_id').value;
+      if (!clientId) return out('out_dep', { error: 'Missing client id' });
+      const r = await fetch(`/api/admin/client-config/client/${clientId}/deployment`, { headers: authHeaders() });
+      const d = await r.json();
+      out('out_dep', d);
+      const dep = d && d.deployment ? d.deployment : null;
+      if (dep) {
+        document.getElementById('dep_website_system_prompt').value = dep.website_system_prompt || '';
+        document.getElementById('dep_welcome_message').value = dep.welcome_message || '';
+        document.getElementById('dep_email_system_prompt').value = dep.email_system_prompt || '';
+        document.getElementById('dep_email_welcome_message').value = dep.email_welcome_message || '';
+      }
+    };
+
+    document.getElementById('btn_save_prompts').onclick = async () => {
+      const clientId = document.getElementById('dep_client_id').value;
+      if (!clientId) return out('out_dep', { error: 'Missing client id' });
+      const website_system_prompt = document.getElementById('dep_website_system_prompt').value;
+      const welcome_message = document.getElementById('dep_welcome_message').value;
+      const email_system_prompt = document.getElementById('dep_email_system_prompt').value;
+      const email_welcome_message = document.getElementById('dep_email_welcome_message').value;
+      const r = await fetch(`/api/admin/client-config/client/${clientId}/system-prompts?` + new URLSearchParams({ website_system_prompt, welcome_message, email_system_prompt, email_welcome_message }), { method: 'PUT', headers: authHeaders() });
+      out('out_dep', await r.json());
+    };
+
+    document.getElementById('btn_set_token').onclick = async () => {
+      const clientId = document.getElementById('dep_client_id').value;
+      const token = document.getElementById('dep_api_token').value;
+      if (!clientId || !token) return out('out_dep', { error: 'Client ID and token required' });
+      const r = await fetch(`/api/admin/client-config/client/${clientId}/token`, { method: 'PUT', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ token }) });
+      out('out_dep', await r.json());
+    };
+
+    // KB Tools
+    document.getElementById('btn_ingest').onclick = async () => {
+      const clientId = document.getElementById('kb2_client_id').value || document.getElementById('kb_client_id').value;
+      if (!clientId) return out('out_kb_tools', { error: 'Missing client id' });
+      const r = await fetch(`/api/admin/clients/${clientId}/ingest`, { method: 'POST', headers: authHeaders() });
+      out('out_kb_tools', await r.json());
+    };
+
+    document.getElementById('btn_rebuild').onclick = async () => {
+      const clientId = document.getElementById('kb2_client_id').value || document.getElementById('kb_client_id').value;
+      if (!clientId) return out('out_kb_tools', { error: 'Missing client id' });
+      const r = await fetch(`/api/admin/knowledge-base/client/${clientId}/rebuild-vectors`, { method: 'POST', headers: authHeaders() });
+      out('out_kb_tools', await r.json());
     };
 
     document.getElementById('btn_create_user').onclick = async () => {

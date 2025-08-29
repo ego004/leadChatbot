@@ -113,15 +113,29 @@
               <option value="unqualified">Unqualified</option>
               <option value="converted">Converted</option>
             </select>
+            <input id="lead_search" placeholder="Search name or phone" style="min-width:200px" />
+            <label class="muted" for="page_size">Page</label>
+            <select id="page_size"><option>10</option><option>25</option><option>50</option></select>
+            <button class="btn" id="btn_export">Export CSV</button>
             <button class="btn" id="btn_refresh">Refresh</button>
           </div>
         </div>
         <table>
           <thead>
-            <tr><th>Name</th><th>Phone</th><th>Status</th><th>Created</th></tr>
+            <tr>
+              <th data-sort="name" style="cursor:pointer">Name</th>
+              <th data-sort="phone_number" style="cursor:pointer">Phone</th>
+              <th data-sort="status" style="cursor:pointer">Status</th>
+              <th data-sort="created_at" style="cursor:pointer">Created</th>
+            </tr>
           </thead>
           <tbody id="leads_tbody"></tbody>
         </table>
+        <div class="stack" style="justify-content:flex-end;margin-top:8px">
+          <button class="btn" id="btn_prev">Prev</button>
+          <span class="muted" id="page_info">Page 1</span>
+          <button class="btn" id="btn_next">Next</button>
+        </div>
       </section>
       <section class="card" id="lead_detail">
         <h2>Conversation</h2>
@@ -152,6 +166,14 @@
 
     const fmt = (d) => new Date(d).toLocaleString();
     const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+
+    // Leads UI state
+    let leadsCache = [];
+    let sortField = 'created_at';
+    let sortDir = 'desc'; // 'asc' | 'desc'
+    let page = 1;
+    let pageSize = 10;
+    let searchTerm = '';
 
     async function login() {
       const email = document.getElementById('email').value;
@@ -217,9 +239,44 @@
     async function loadLeads() {
       const f = document.getElementById('status_filter').value;
       const data = await fetchJSON('/api/client/leads' + (f?`?status_filter=${encodeURIComponent(f)}`:''));
+      leadsCache = data.leads || [];
+      renderLeads();
+    }
+
+    function renderLeads() {
+      // search filter
+      const q = searchTerm.trim().toLowerCase();
+      let rows = leadsCache.filter(l => {
+        if (!q) return true;
+        const name = (l.name||'').toLowerCase();
+        const phone = (l.phone_number||'').toLowerCase();
+        return name.includes(q) || phone.includes(q);
+      });
+      // sort
+      rows.sort((a,b)=>{
+        const va = (a[sortField]||'');
+        const vb = (b[sortField]||'');
+        if (sortField === 'created_at') {
+          const da = new Date(va).getTime();
+          const db = new Date(vb).getTime();
+          return sortDir==='asc' ? da-db : db-da;
+        }
+        if (typeof va === 'string' && typeof vb === 'string') {
+          return sortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        return sortDir==='asc' ? (va>vb?1:va<vb?-1:0) : (vb>va?1:vb<va?-1:0);
+      });
+      // pagination
+      const total = rows.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      if (page > totalPages) page = totalPages;
+      const start = (page-1)*pageSize;
+      const pageRows = rows.slice(start, start+pageSize);
+      // render
       const tb = document.getElementById('leads_tbody');
       tb.innerHTML = '';
-      (data.leads||[]).forEach(l=> tb.appendChild(leadRow(l)) );
+      pageRows.forEach(l=> tb.appendChild(leadRow(l)) );
+      document.getElementById('page_info').textContent = `Page ${page} / ${totalPages} · ${total} leads`;
     }
 
     async function openLead(lead_id, status, name) {
@@ -256,6 +313,57 @@
     document.getElementById('btn_refresh').onclick = loadLeads;
     document.getElementById('btn_update_status').onclick = updateStatus;
     document.getElementById('btn_logout').onclick = () => { localStorage.removeItem(LS_TOKEN); token=null; location.reload(); };
+
+    // Leads controls
+    document.getElementById('status_filter').onchange = () => { page = 1; loadLeads(); };
+    document.getElementById('lead_search').oninput = (e) => { searchTerm = e.target.value; page = 1; renderLeads(); };
+    document.getElementById('page_size').onchange = (e) => { pageSize = parseInt(e.target.value,10)||10; page = 1; renderLeads(); };
+    document.getElementById('btn_prev').onclick = () => { if (page>1) { page--; renderLeads(); } };
+    document.getElementById('btn_next').onclick = () => { page++; renderLeads(); };
+    document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', ()=>{
+        const field = th.getAttribute('data-sort');
+        if (sortField === field) { sortDir = (sortDir==='asc'?'desc':'asc'); } else { sortField = field; sortDir = 'asc'; }
+        renderLeads();
+      });
+    });
+
+    // CSV export of current view
+    document.getElementById('btn_export').onclick = () => {
+      // Recompute current view to export
+      const q = searchTerm.trim().toLowerCase();
+      let rows = leadsCache.filter(l => {
+        if (!q) return true;
+        const name = (l.name||'').toLowerCase();
+        const phone = (l.phone_number||'').toLowerCase();
+        return name.includes(q) || phone.includes(q);
+      });
+      rows.sort((a,b)=>{
+        const va = (a[sortField]||'');
+        const vb = (b[sortField]||'');
+        if (sortField === 'created_at') {
+          const da = new Date(va).getTime();
+          const db = new Date(vb).getTime();
+          return sortDir==='asc' ? da-db : db-da;
+        }
+        if (typeof va === 'string' && typeof vb === 'string') {
+          return sortDir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+        }
+        return sortDir==='asc' ? (va>vb?1:va<vb?-1:0) : (vb>va?1:vb<va?-1:0);
+      });
+      const start = (page-1)*pageSize;
+      const pageRows = rows.slice(start, start+pageSize);
+      const header = ['lead_id','name','phone_number','status','created_at'];
+      const csv = [header.join(',')].concat(pageRows.map(l=> header.map(k=>{
+        const v = (l[k]!==undefined && l[k]!==null) ? String(l[k]) : '';
+        const esc = v.replaceAll('"','""');
+        return /[",\n]/.test(esc) ? `"${esc}"` : esc;
+      }).join(','))).join('\n');
+      const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'leads.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    };
 
     // Auto-resume session
     (async () => { if (token) { try { await loadDashboard(); } catch { localStorage.removeItem(LS_TOKEN); } } })();
