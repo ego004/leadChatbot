@@ -28,14 +28,17 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(admin.router)
+# Routers that define non-"/api" prefixes need a global "/api" prefix (admin, auth)
+app.include_router(admin.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+
+# Routers that already include "/api" in their own prefixes should be included as-is
 app.include_router(knowledge_base.router)
 app.include_router(client_config.router)
 app.include_router(chat.router)
 app.include_router(client_dashboard.router)
 app.include_router(leads_dashboard.router)
 app.include_router(automation.router)
-app.include_router(auth.router)
 app.include_router(ingestion_router)
 app.include_router(form.router)
 
