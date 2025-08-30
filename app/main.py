@@ -39,7 +39,7 @@ app.include_router(auth.router)
 app.include_router(ingestion_router)
 
 # Mount minimal static admin UI
-app.mount("/admin-ui", StaticFiles(directory="frontend", html=True), name="admin-ui")
+app.mount("/api/admin-ui", StaticFiles(directory="frontend", html=True), name="admin-ui")
 
 @app.on_event("startup")
 async def startup_event():
@@ -58,11 +58,11 @@ async def startup_event():
     except Exception as e:
         print(f"⚠️ Failed to preload embeddings: {e}")
 
-@app.get("/")
+@app.get("/api/")
 def read_root():
     return {"message": "LeadGenius AI Backend API", "version": "3.0.0"}
 
-@app.get("/health")
+@app.get("api/health")
 def health_check():
     return {"status": "healthy"}
 

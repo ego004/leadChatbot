@@ -37,8 +37,8 @@
   <header>
     <div class="brand">LeadGenius · Admin Console</div>
     <nav class="stack">
-      <a href="/admin-ui/client.html">Client Dashboard</a>
-      <a href="/admin-ui/index.html">Legacy Tools</a>
+      <a href="/api/admin-ui/client.html">Client Dashboard</a>
+      <a href="/api/admin-ui/index.html">Legacy Tools</a>
     </nav>
   </header>
 
@@ -187,7 +187,7 @@ Email: sales@example.com</textarea>
     <section class="card">
       <h2>Integration</h2>
       <p class="muted">Embed your chatbot with the Custom Client ID and Token in your site or app. See documentation in the repo.</p>
-      <a href="/admin-ui/client.html">Open Client Dashboard</a>
+      <a href="/api/admin-ui/client.html">Open Client Dashboard</a>
     </section>
   </div>
 
@@ -210,7 +210,7 @@ Email: sales@example.com</textarea>
     document.getElementById('btn_admin_login').onclick = async () => {
       const email = document.getElementById('admin_email').value;
       const password = document.getElementById('admin_password').value;
-      const r = await fetch('/auth/login', {
+      const r = await fetch('/api/auth/login', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password })
       });
       const data = await r.json();
@@ -223,7 +223,7 @@ Email: sales@example.com</textarea>
       const website_url = document.getElementById('client_website').value;
       const contact_email = document.getElementById('client_email').value;
       const params = new URLSearchParams({ name, website_url, contact_email });
-      const r = await fetch('/admin/clients', { method: 'POST', headers: authHeaders(), body: params });
+      const r = await fetch('/api/admin/clients', { method: 'POST', headers: authHeaders(), body: params });
       const data = await r.json();
       out('out_create_client', data);
       if (data && data.client_id) {
@@ -337,7 +337,7 @@ Email: sales@example.com</textarea>
       const email = document.getElementById('user_email').value;
       const password = document.getElementById('user_password').value;
       const params = new URLSearchParams({ email, password });
-      const r = await fetch(`/admin/clients/${clientId}/users`, { method: 'POST', headers: authHeaders(), body: params });
+      const r = await fetch(`/api/admin/clients/${clientId}/users`, { method: 'POST', headers: authHeaders(), body: params });
       const data = await r.json();
       out('out_user', data);
     };

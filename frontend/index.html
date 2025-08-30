@@ -27,12 +27,12 @@
       <div>
         <h3 style="margin:6px 0">Admin Console</h3>
         <p style="margin:0 0 8px;color:#374151">Create clients, deploy, add knowledge base, and create dashboard users.</p>
-        <a href="/admin-ui/admin.html"><button>Open Admin Console</button></a>
+        <a href="/api/admin-ui/admin.html"><button>Open Admin Console</button></a>
       </div>
       <div>
         <h3 style="margin:6px 0">Client Dashboard</h3>
         <p style="margin:0 0 8px;color:#374151">Login to view stats, leads, and conversations. Update lead statuses.</p>
-        <a href="/admin-ui/client.html"><button>Open Client Dashboard</button></a>
+        <a href="/api/admin-ui/client.html"><button>Open Client Dashboard</button></a>
       </div>
     </div>
   </div>
@@ -323,7 +323,7 @@
     document.getElementById('btn_admin_login').onclick = async () => {
       const email = document.getElementById('admin_email').value;
       const password = document.getElementById('admin_password').value;
-      const r = await fetch('/auth/login', {
+      const r = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -339,7 +339,7 @@
       const email = document.getElementById('client_email').value;
       const website_system_prompt = document.getElementById('client_website_system_prompt').value;
       const welcome_message = document.getElementById('client_welcome_message').value;
-      const r = await postForm('/admin/clients', { name, website_url, contact_email: email, website_system_prompt, welcome_message }, { adminAuth: true });
+      const r = await postForm('/api/admin/clients', { name, website_url, contact_email: email, website_system_prompt, welcome_message }, { adminAuth: true });
       out('out_create_client', r);
       if (r && r.client_id) {
         document.getElementById('client_id').value = r.client_id;
@@ -425,7 +425,7 @@
       const clientId = document.getElementById('user_client_id').value;
       const email = document.getElementById('user_email').value;
       const password = document.getElementById('user_password').value;
-      const r = await postForm(`/admin/clients/${clientId}/users`, { email, password }, { adminAuth: true });
+      const r = await postForm(`/api/admin/clients/${clientId}/users`, { email, password }, { adminAuth: true });
       out('out_create_user', r);
       if (email) document.getElementById('login_email').value = email;
       if (clientId) document.getElementById('login_client_hint').value = clientId;
