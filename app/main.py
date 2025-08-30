@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import admin, client_config, knowledge_base, chat, client_dashboard, leads_dashboard, automation, auth
+from app.routers import admin, client_config, knowledge_base, chat, client_dashboard, leads_dashboard, automation, auth, form
 from app.routers.ingestion import router as ingestion_router
 from app.database import engine, Base, ensure_tables
 from app.services.db_migrations import run_lightweight_migrations
@@ -37,6 +37,7 @@ app.include_router(leads_dashboard.router)
 app.include_router(automation.router)
 app.include_router(auth.router)
 app.include_router(ingestion_router)
+app.include_router(form.router)
 
 # Mount minimal static admin UI
 app.mount("/api/admin-ui", StaticFiles(directory="frontend", html=True), name="admin-ui")
@@ -62,7 +63,7 @@ async def startup_event():
 def read_root():
     return {"message": "LeadGenius AI Backend API", "version": "3.0.0"}
 
-@app.get("api/health")
+@app.get("/api/health")
 def health_check():
     return {"status": "healthy"}
 

@@ -29,6 +29,7 @@ def create_tables():
     from app.models.knowledge_base import ClientDeployment, KnowledgeDocument
     from app.models.analytics import ClientDailyStats
     from app.models.automation import Sequence, SequenceStep, LeadSequenceState
+    from app.models.form_contact import FormContact
     
     # Drop all existing tables first (safely for MySQL by disabling FK checks)
     with engine.connect() as conn:
@@ -59,6 +60,7 @@ def ensure_tables():
     from app.models.lead import Lead
     from app.models.knowledge_base import ClientDeployment, KnowledgeDocument
     from app.models.analytics import ClientDailyStats
+    from app.models.form_contact import FormContact
     
     Base.metadata.create_all(bind=engine)
     print("✅ Ensured database tables exist")
