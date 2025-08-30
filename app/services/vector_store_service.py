@@ -37,6 +37,15 @@ def _is_offline_enabled() -> bool:
     except Exception:
         return False
 
+def _resolve_local_model_path(model_name: Optional[str]) -> Optional[str]:
+    """If model_name points to a local folder/file, return its absolute path; otherwise return as-is."""
+    try:
+        if model_name and (os.path.isdir(model_name) or os.path.isfile(model_name)):
+            return os.path.abspath(model_name)
+    except Exception:
+        pass
+    return model_name
+
 def preload_embeddings():
     """Preload the embeddings singleton once at startup.
     Applies offline flags and avoids first-request latency.
@@ -46,6 +55,7 @@ def preload_embeddings():
     if _EMBEDDINGS_SINGLETON is None:
         _apply_offline_flags()
         model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
+        model_name = _resolve_local_model_path(model_name)
         model_kwargs = {"local_files_only": True} if _is_offline_enabled() else None
         _EMBEDDINGS_SINGLETON = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
         logging.info(f"Preloaded HuggingFaceEmbeddings singleton: {model_name} | offline={_is_offline_enabled()}")
@@ -72,6 +82,7 @@ class VectorStoreService:
         if _EMBEDDINGS_SINGLETON is None:
             _apply_offline_flags()
             model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
+            model_name = _resolve_local_model_path(model_name)
             model_kwargs = {"local_files_only": True} if _is_offline_enabled() else None
             _EMBEDDINGS_SINGLETON = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
             logging.info(f"Initialized HuggingFaceEmbeddings singleton: {model_name} | offline={_is_offline_enabled()}")
