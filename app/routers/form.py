@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 
 from app.database import get_db
 from app.models.form_contact import FormContact
+from app.auth import require_admin
 
 router = APIRouter(prefix="/api/form", tags=["form"])
 
@@ -70,4 +71,29 @@ async def submit_contact(
         "id": record.id,
         "created_at": record.created_at,
         "status": "stored",
+    }
+
+
+@router.get("/contacts")
+def get_all_contact_form_entries(
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_admin)
+):
+    """Retrieve all contact form submissions. Admin access required."""
+    contacts = db.query(FormContact).order_by(FormContact.created_at.desc()).all()
+    
+    return {
+        "total_count": len(contacts),
+        "contacts": [
+            {
+                "id": contact.id,
+                "name": contact.name,
+                "email": contact.email,
+                "company": contact.company,
+                "phone": contact.phone,
+                "service": contact.service,
+                "message": contact.message,
+                "created_at": contact.created_at
+            } for contact in contacts
+        ]
     }
