@@ -4,6 +4,10 @@ import tempfile
 import os
 import uuid
 from app.config import settings
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class SupabaseStorageService:
@@ -15,9 +19,9 @@ class SupabaseStorageService:
             if settings.supabase_url and settings.supabase_key:
                 try:
                     self.client = create_client(settings.supabase_url, settings.supabase_key)
-                    print("Supabase client initialized successfully")
+                    logger.info("Supabase client initialized successfully")
                 except Exception as e:
-                    print(f"Failed to initialize Supabase client: {e}")
+                    logger.warning(f"Failed to initialize Supabase client: {e}")
     
     def is_available(self) -> bool:
         """Check if Supabase is available"""
@@ -47,7 +51,7 @@ class SupabaseStorageService:
             return True
             
         except Exception as e:
-            print(f"Error uploading markdown to Supabase: {e}")
+            logger.warning(f"Error uploading markdown to Supabase: {e}")
             return False
     
     def download_markdown(self, client_id: str, filename: str) -> Optional[str]:
@@ -69,7 +73,7 @@ class SupabaseStorageService:
             return content
             
         except Exception as e:
-            print(f"Error downloading markdown from Supabase: {e}")
+            logger.warning(f"Error downloading markdown from Supabase: {e}")
             return None
     
     def list_markdowns(self, client_id: str) -> List[str]:
@@ -85,7 +89,7 @@ class SupabaseStorageService:
             return [file['name'] for file in files if file['name'].endswith('.md')]
             
         except Exception as e:
-            print(f"Error listing markdowns from Supabase: {e}")
+            logger.warning(f"Error listing markdowns from Supabase: {e}")
             return []
     
     def delete_markdown(self, client_id: str, filename: str) -> bool:
@@ -101,7 +105,7 @@ class SupabaseStorageService:
             return True
             
         except Exception as e:
-            print(f"Error deleting markdown from Supabase: {e}")
+            logger.warning(f"Error deleting markdown from Supabase: {e}")
             return False
     
     def delete_all_client_markdowns(self, client_id: str) -> bool:
@@ -119,7 +123,7 @@ class SupabaseStorageService:
             return True
             
         except Exception as e:
-            print(f"Error deleting all client markdowns from Supabase: {e}")
+            logger.warning(f"Error deleting all client markdowns from Supabase: {e}")
             return False
 
 

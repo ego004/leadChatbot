@@ -1,3 +1,5 @@
+# Module logger
+logger = logging.getLogger(__name__)
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +11,7 @@ from app.models import analytics  # ensure ClientDailyStats is registered
 from app.models import client_user  # ensure ClientUser is registered
 from app.services.vector_store_service import preload_embeddings
 from app.services.service_manager import service_manager
+import logging
 
 # Avoid destructive operations at import time; ensure tables will be created on startup
 
@@ -56,16 +59,16 @@ async def startup_event():
             # Run lightweight in-code migrations (add missing columns, etc.)
             run_lightweight_migrations(engine)
         except Exception as e:
-            print(f"⚠️ Lightweight migrations failed: {e}")
+            logger.warning(f"Lightweight migrations failed: {e}")
         # Warm embeddings model to avoid first-request latency
         preload_embeddings()
-        print("✅ Embeddings preloaded")
+        logger.info("Embeddings preloaded")
         
         # Preload service manager singletons
         service_manager.preload_services()
-        print("✅ Service singletons preloaded")
+        logger.info("Service singletons preloaded")
     except Exception as e:
-        print(f"⚠️ Failed to preload embeddings: {e}")
+        logger.warning(f"Failed to preload embeddings/services: {e}")
 
 @app.get("/api/")
 def read_root():

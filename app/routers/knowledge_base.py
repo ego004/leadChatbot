@@ -12,8 +12,10 @@ import os
 import tempfile
 import uuid
 from pathlib import Path
+import logging
 
 router = APIRouter(prefix="/api/admin/knowledge-base", tags=["Knowledge Base Management"], dependencies=[Depends(require_admin)])
+logger = logging.getLogger(__name__)
 
 class AddMarkdownRequest(BaseModel):
     title: str
@@ -43,7 +45,7 @@ async def add_markdown_content(
     req_content = None
     try:
         ctype = request.headers.get("content-type", "?")
-        print(f"[KB] add-markdown: content-type={ctype}")
+        logger.debug(f"[KB] add-markdown: content-type={ctype}")
     except Exception:
         pass
     # Try JSON first
@@ -72,7 +74,7 @@ async def add_markdown_content(
             size_hint = len(await request.body())
         except Exception:
             size_hint = -1
-        print(f"[KB] add-markdown: missing fields. size={size_hint}")
+        logger.debug(f"[KB] add-markdown: missing fields. size={size_hint}")
         raise HTTPException(status_code=400, detail="Both 'title' and 'content' are required (JSON or form)")
 
     # Generate a document_id up-front so we can deterministically name storage path

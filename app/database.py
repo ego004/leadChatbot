@@ -2,6 +2,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
+import logging
 
 engine = create_engine(
     settings.database_url,
@@ -13,6 +14,8 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+logger = logging.getLogger(__name__)
 
 def get_db():
     db = SessionLocal()
@@ -51,7 +54,7 @@ def create_tables():
 
     # Create all tables
     Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created successfully")
+    logger.info("Database tables created successfully")
 
 def ensure_tables():
     """Create any missing tables without dropping existing data (safe for startup)."""
@@ -63,4 +66,4 @@ def ensure_tables():
     from app.models.form_contact import FormContact
     
     Base.metadata.create_all(bind=engine)
-    print("✅ Ensured database tables exist")
+    logger.info("Ensured database tables exist")
