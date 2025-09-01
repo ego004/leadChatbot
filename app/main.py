@@ -8,6 +8,7 @@ from app.services.db_migrations import run_lightweight_migrations
 from app.models import analytics  # ensure ClientDailyStats is registered
 from app.models import client_user  # ensure ClientUser is registered
 from app.services.vector_store_service import preload_embeddings
+from app.services.service_manager import service_manager
 
 # Avoid destructive operations at import time; ensure tables will be created on startup
 
@@ -59,6 +60,10 @@ async def startup_event():
         # Warm embeddings model to avoid first-request latency
         preload_embeddings()
         print("✅ Embeddings preloaded")
+        
+        # Preload service manager singletons
+        service_manager.preload_services()
+        print("✅ Service singletons preloaded")
     except Exception as e:
         print(f"⚠️ Failed to preload embeddings: {e}")
 

@@ -2,13 +2,13 @@ from typing import Dict, Any, List
 import asyncio
 import json
 from app.config import settings
-from app.services.gemini_service import GeminiService
+from app.services.service_manager import service_manager
 
 
 class LLMService:
     def __init__(self):
-        # Use Gemini/Gemma as the canonical LLM provider
-        self.gemini = GeminiService()
+        # Use cached Gemini service to avoid repeated initialization
+        self.gemini = service_manager.get_gemini_service()
     
     def generate_system_prompt(self, client_name: str, website_url: str) -> str:
         """Generate a system prompt for the client's chatbot"""

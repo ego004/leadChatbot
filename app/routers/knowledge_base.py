@@ -5,7 +5,7 @@ from typing import List, Optional
 from app.database import get_db
 from app.models.knowledge_base import KnowledgeDocument
 from app.services.crawler import crawl_website, read_and_combine_markdown_files, cleanup_temp_files
-from app.services.vector_store_service import VectorStoreService
+from app.services.service_manager import service_manager
 from app.services.supabase_storage import supabase_storage
 from app.auth import require_admin
 import os
@@ -101,7 +101,7 @@ async def add_markdown_content(
     db.refresh(kb_entry)
 
     # Index into vector database using the full content from request
-    vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+    vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
     vector_store.add_text(
         req_content,
         metadata={
@@ -150,7 +150,7 @@ async def update_markdown_content(
         kb_entry.content = None
 
         # Replace vectors for this document: delete old chunks then add new
-        vector_store = VectorStoreService(collection_name=f"client_{kb_entry.client_id}")
+        vector_store = service_manager.get_vector_store_service(f"client_{kb_entry.client_id}")
         try:
             vector_store.delete_by_document_id(str(kb_entry.document_id))
         except Exception:
@@ -194,7 +194,7 @@ async def delete_markdown_content(document_id: str, db: Session = Depends(get_db
     
     # Delete vectors for this document_id within the client's collection (best effort)
     try:
-        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
         vector_store.delete_by_document_id(str(kb_entry.document_id))
     except Exception:
         pass
@@ -248,7 +248,7 @@ async def upload_markdown_file(
         db.refresh(kb_entry)
         
         # Update vector database
-        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
         vector_store.add_text(
             content_str,
             metadata={
@@ -286,7 +286,7 @@ async def rebuild_vector_database(client_id: str, db: Session = Depends(get_db))
             }
         
         # Rebuild vector store
-        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
         vector_store.delete_collection() # Clear old vectors
         
         # Add all documents back to the store (read exclusively from Supabase Storage)
@@ -328,7 +328,7 @@ async def search_knowledge_base(
     """Search client's knowledge base using vector similarity"""
     
     try:
-        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
         results = vector_store.query(query, k=limit)
         # Serialize LangChain Documents to JSON-friendly dicts
         results = [
@@ -403,7 +403,7 @@ async def create_markdown_in_storage(
         db.refresh(kb_entry)
 
         # Index to vectors from provided content
-        vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+        vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
         vector_store.add_text(content, metadata={"document_id": str(kb_entry.document_id)})
 
         return {"success": True, "document_id": str(kb_entry.document_id), "filename": filename}

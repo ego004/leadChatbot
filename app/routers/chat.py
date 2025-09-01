@@ -5,9 +5,7 @@ from app.database import get_db
 from app.models.lead import Lead, ChatSession, ChatHistory, SenderType, LeadStatus
 from app.models.client import Client
 from app.models.knowledge_base import ClientDeployment
-from app.services.vector_store_service import VectorStoreService
-from app.services.gemini_service import GeminiService
-from app.services.lead_service import LeadService
+from app.services.service_manager import service_manager
 from app.services.analytics_service import increment_stats
 import uuid
 from typing import Optional
@@ -96,8 +94,8 @@ async def send_message(
 
     client_id = str(deployment.client_id)
     
-    # Initialize services
-    lead_service = LeadService(db)
+    # Initialize services using service manager (cached instances)
+    lead_service = service_manager.get_lead_service(db)
 
     # Determine lead and session linkage correctly
     lead_created = False
@@ -187,9 +185,9 @@ async def send_message(
     except Exception:
         pass
     
-    # Get relevant context from knowledge base
+    # Get relevant context from knowledge base using cached service
     # IngestionService stores vectors in collection name prefixed with "client_"
-    vector_store = VectorStoreService(collection_name=f"client_{client_id}")
+    vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
     # Retrieve KB context
     try:
         k = max(1, min(int(top_k), 20))
@@ -210,8 +208,8 @@ async def send_message(
             "message": msg.message_text
         })
     
-    # Generate AI response with Gemini and tools
-    gemini_service = GeminiService()
+    # Generate AI response with Gemini and tools using cached service
+    gemini_service = service_manager.get_gemini_service()
     base_prompt = deployment.website_system_prompt or "You are a helpful AI assistant."
 
     # Build dynamic guardrails to avoid repetition and progress the flow

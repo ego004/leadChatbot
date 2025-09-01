@@ -43,12 +43,13 @@ class VectorStoreService:
             chunk_overlap=80,
         )
 
-        # Embeddings: enforce SentenceTransformers only and reuse singleton
+        # Embeddings: enforce SentenceTransformers singleton only
         global _EMBEDDINGS_SINGLETON
         if _EMBEDDINGS_SINGLETON is None:
-            model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
-            _EMBEDDINGS_SINGLETON = SentenceTransformerEmbeddings(model_name=model_name)
-            logging.info(f"Initialized SentenceTransformerEmbeddings singleton: {model_name}")
+            raise RuntimeError(
+                "SentenceTransformer embeddings not preloaded! "
+                "Call preload_embeddings() during app startup before creating VectorStoreService instances."
+            )
         self.embedding_function = _EMBEDDINGS_SINGLETON
 
         # Backend selection (Supabase only)

@@ -28,7 +28,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import requests
 
@@ -45,7 +45,7 @@ def pretty(o):
 # ------------- Admin/Auth -------------
 
 def admin_login(base: str, email: str, password: str) -> str:
-    r = requests.post(f"{base}/auth/login", json={"email": email, "password": password}, timeout=30)
+    r = requests.post(f"{base}/api/auth/login", json={"email": email, "password": password}, timeout=30)
     r.raise_for_status()
     return r.json().get("access_token")
 
@@ -56,7 +56,7 @@ def admin_create_client(base: str, admin_token: str, name: str, website_url: str
     headers = {"Authorization": f"Bearer {admin_token}"}
     # Accepts JSON, form, or query; we send JSON
     r = requests.post(
-        f"{base}/admin/clients",
+        f"{base}/api/admin/clients",
         headers=headers,
         json={"name": name, "website_url": website_url},
         timeout=30,
@@ -139,6 +139,7 @@ def chat_message(
     lead_phone: str | None = None,
     return_sources: bool = False,
     top_k: int = 5,
+    measure_time: bool = False,
 ) -> dict:
     headers = {"x-deployment-token": deployment_token}
     params = {
@@ -155,6 +156,9 @@ def chat_message(
     if lead_phone:
         params["lead_phone"] = lead_phone
 
+    if measure_time:
+        start_time = time.time()
+    
     r = requests.post(
         f"{base}/api/chat/{custom_client_id}/message",
         headers=headers,
@@ -162,7 +166,14 @@ def chat_message(
         timeout=90,
     )
     r.raise_for_status()
-    return r.json()
+    result = r.json()
+    
+    if measure_time:
+        response_time = time.time() - start_time
+        result["_response_time_seconds"] = round(response_time, 3)
+        print(f"⏱️  Chat response time: {response_time:.3f}s")
+    
+    return result
 
 
 # ------------- Client Dashboard -------------
@@ -171,7 +182,7 @@ def create_client_user(base: str, admin_token: str, client_id: str, email: str, 
     headers = {"Authorization": f"Bearer {admin_token}"}
     payload = {"email": email, "password": password}
     r = requests.post(
-        f"{base}/admin/clients/{client_id}/users",
+        f"{base}/api/admin/clients/{client_id}/users",
         headers=headers,
         json=payload,
         timeout=30,
@@ -235,7 +246,7 @@ def main():
     ap.add_argument('--admin-password', default=os.getenv('ADMIN_PASSWORD', 'ChangeMe123!'))
     ap.add_argument('--jwt-secret-key', default=os.getenv('JWT_SECRET_KEY'))
 
-    ap.add_argument('--new-client-name', default=f"E2E Client {datetime.utcnow().strftime('%Y%m%d%H%M%S')}")
+    ap.add_argument('--new-client-name', default=f"E2E Client {datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}")
     ap.add_argument('--new-client-website', default='https://example.com')
 
     ap.add_argument('--contact-name', default='John Prospect')
@@ -292,10 +303,14 @@ def main():
     except Exception as e:
         print(f"Warning: ingestion failed or not configured: {e}")
 
-    # 6) Chat with chatbot
-    print("Chatting with chatbot...")
+    # 6) Chat with chatbot - PERFORMANCE TEST
+    print("\n🚀 PERFORMANCE TEST: Chatting with chatbot...")
+    print("=" * 60)
     session_id = str(uuid.uuid4())
+    response_times = []
+    
     for i, msg in enumerate(args.messages, start=1):
+        print(f"\nTurn {i}: '{msg}'")
         res = chat_message(
             args.base_url,
             custom_client_id,
@@ -303,15 +318,41 @@ def main():
             msg,
             session_id=session_id,
             return_sources=True,
+            measure_time=True,
         )
-        print(f"Turn {i}:")
-        print(pretty({k: res.get(k) for k in ["session_id", "response", "context_used", "lead_qualified", "contact_captured"]}))
-        time.sleep(1)
+        
+        # Track response time
+        if "_response_time_seconds" in res:
+            response_times.append(res["_response_time_seconds"])
+            del res["_response_time_seconds"]  # Clean for display
+        
+        print(f"Response: {res.get('response', 'N/A')[:100]}...")
+        print(f"Context used: {res.get('context_used', False)}")
+        time.sleep(0.5)  # Reduced sleep to speed up test
+    
+    # Performance summary
+    if response_times:
+        avg_time = sum(response_times) / len(response_times)
+        max_time = max(response_times)
+        min_time = min(response_times)
+        print(f"\n📊 PERFORMANCE SUMMARY:")
+        print(f"   Average response time: {avg_time:.3f}s")
+        print(f"   Fastest response: {min_time:.3f}s")
+        print(f"   Slowest response: {max_time:.3f}s")
+        print(f"   Total requests: {len(response_times)}")
+        
+        if avg_time < 2.5:
+            print("   ✅ EXCELLENT: Average under 2.5s (target achieved!)")
+        elif avg_time < 4.0:
+            print("   ⚡ GOOD: Average under 4.0s (improved from 4-6s)")
+        else:
+            print("   ⚠️  SLOW: Still over 4s (optimization may need more work)")
 
     # Provide contact info to ensure capture + qualification
     contact_text = (
         f"My name is {args.contact_name}. You can reach me at {args.contact_email} or {args.contact_phone}."
     )
+    print(f"\nContact info turn: '{contact_text}'")
     contact_res = chat_message(
         args.base_url,
         custom_client_id,
@@ -321,6 +362,7 @@ def main():
         lead_name=args.contact_name,
         lead_email=args.contact_email,
         lead_phone=args.contact_phone,
+        measure_time=True,
     )
     print("Contact turn:")
     print(pretty({k: contact_res.get(k) for k in ["lead_qualified", "contact_captured", "tool_results"]}))

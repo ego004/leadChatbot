@@ -266,8 +266,8 @@ def delete_client(
         pass
     # Explicit delete collection without rebuild
     try:
-        from app.services.vector_store_service import VectorStoreService
-        VectorStoreService(collection_name=f"client_{client_id}").delete_collection()
+        from app.services.service_manager import service_manager
+        service_manager.get_vector_store_service(f"client_{client_id}").delete_collection()
     except Exception:
         pass
 

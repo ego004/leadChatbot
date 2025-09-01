@@ -8,7 +8,7 @@ from app.models.client import Client, IngestionStatus
 from app.models.knowledge_base import KnowledgeDocument
 from app.services.crawler import crawl_website, read_and_combine_markdown_files, cleanup_temp_files
 from app.services.llm_filter import markdown_filter
-from app.services.vector_store_service import VectorStoreService
+from app.services.service_manager import service_manager
 from app.services.supabase_storage import supabase_storage
 
 
@@ -128,7 +128,7 @@ class IngestionService:
         """Delete and rebuild the client's vector collection from KnowledgeDocuments.
         Read markdown exclusively from Supabase Storage (no DB fallback)."""
         collection = self._collection_name(client_id)
-        vs = VectorStoreService(collection_name=collection)
+        vs = service_manager.get_vector_store_service(collection)
         # Drop and rebuild
         try:
             vs.delete_collection()
@@ -159,7 +159,7 @@ class IngestionService:
 
     def add_or_update_document_in_vectors(self, client_id: str, document: KnowledgeDocument) -> None:
         collection = self._collection_name(client_id)
-        vs = VectorStoreService(collection_name=collection)
+        vs = service_manager.get_vector_store_service(collection)
         try:
             filename = f"{document.document_id}.md"
             content = supabase_storage.download_markdown(str(client_id), filename)
@@ -179,5 +179,5 @@ class IngestionService:
 
     def delete_vectors_for_client(self, client_id: str) -> None:
         collection = self._collection_name(client_id)
-        vs = VectorStoreService(collection_name=collection)
+        vs = service_manager.get_vector_store_service(collection)
         vs.delete_collection()
