@@ -2,63 +2,29 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 from typing import List, Optional
 import logging
-import os
 from app.config import settings
 
 # Vector stores
 from langchain_community.vectorstores import SupabaseVectorStore  # type: ignore
 from supabase import create_client, Client  # type: ignore
 
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.embeddings import SentenceTransformerEmbeddings
 
 logging.basicConfig(level=logging.INFO)
 
-# Cache a single HuggingFaceEmbeddings instance process-wide
-_EMBEDDINGS_SINGLETON: Optional[HuggingFaceEmbeddings] = None
-
-def _apply_offline_flags():
-    """Apply offline environment flags based on settings, if provided."""
-    try:
-        if getattr(settings, "hf_hub_offline", None):
-            os.environ["HF_HUB_OFFLINE"] = "1"
-        if getattr(settings, "transformers_offline", None):
-            os.environ["TRANSFORMERS_OFFLINE"] = "1"
-        if os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1":
-            logging.info("Offline mode enabled for Hugging Face (HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE)")
-    except Exception as e:
-        logging.warning(f"Failed to apply offline flags: {e}")
-
-def _is_offline_enabled() -> bool:
-    """Return True if either env flags or settings indicate offline mode."""
-    try:
-        if os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1":
-            return True
-        return bool(getattr(settings, "hf_hub_offline", False) or getattr(settings, "transformers_offline", False))
-    except Exception:
-        return False
-
-def _resolve_local_model_path(model_name: Optional[str]) -> Optional[str]:
-    """If model_name points to a local folder/file, return its absolute path; otherwise return as-is."""
-    try:
-        if model_name and (os.path.isdir(model_name) or os.path.isfile(model_name)):
-            return os.path.abspath(model_name)
-    except Exception:
-        pass
-    return model_name
+# Cache a single SentenceTransformerEmbeddings instance process-wide
+_EMBEDDINGS_SINGLETON: Optional[SentenceTransformerEmbeddings] = None
 
 def preload_embeddings():
-    """Preload the embeddings singleton once at startup.
-    Applies offline flags and avoids first-request latency.
+    """Preload the SentenceTransformer embeddings singleton.
+    This avoids first-request latency and repeated model loads.
     Safe to call multiple times.
     """
     global _EMBEDDINGS_SINGLETON
     if _EMBEDDINGS_SINGLETON is None:
-        _apply_offline_flags()
         model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
-        model_name = _resolve_local_model_path(model_name)
-        model_kwargs = {"local_files_only": True} if _is_offline_enabled() else None
-        _EMBEDDINGS_SINGLETON = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
-        logging.info(f"Preloaded HuggingFaceEmbeddings singleton: {model_name} | offline={_is_offline_enabled()}")
+        _EMBEDDINGS_SINGLETON = SentenceTransformerEmbeddings(model_name=model_name)
+        logging.info(f"Preloaded SentenceTransformerEmbeddings singleton: {model_name}")
 
 class VectorStoreService:
     """
@@ -80,12 +46,9 @@ class VectorStoreService:
         # Embeddings: enforce SentenceTransformers only and reuse singleton
         global _EMBEDDINGS_SINGLETON
         if _EMBEDDINGS_SINGLETON is None:
-            _apply_offline_flags()
             model_name = getattr(settings, "embeddings_model_name", None) or "all-MiniLM-L6-v2"
-            model_name = _resolve_local_model_path(model_name)
-            model_kwargs = {"local_files_only": True} if _is_offline_enabled() else None
-            _EMBEDDINGS_SINGLETON = HuggingFaceEmbeddings(model_name=model_name, model_kwargs=model_kwargs)
-            logging.info(f"Initialized HuggingFaceEmbeddings singleton: {model_name} | offline={_is_offline_enabled()}")
+            _EMBEDDINGS_SINGLETON = SentenceTransformerEmbeddings(model_name=model_name)
+            logging.info(f"Initialized SentenceTransformerEmbeddings singleton: {model_name}")
         self.embedding_function = _EMBEDDINGS_SINGLETON
 
         # Backend selection (Supabase only)

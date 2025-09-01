@@ -30,13 +30,6 @@ class Settings(BaseSettings):
     # Embeddings configuration
     # Values: 'local' (default) uses sentence-transformers; 'google' uses Google Generative AI embeddings
     embeddings_provider: str = "local"
-    # Optional: set a model name or local path for embeddings (used by HuggingFaceEmbeddings)
-    # Example: EMBEDDINGS_MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2" or a local dir path
-    embeddings_model_name: Optional[str] = None
-    # Optional offline toggles for Hugging Face
-    # When true, we set HF_HUB_OFFLINE/TRANSFORMERS_OFFLINE to enforce offline usage
-    hf_hub_offline: Optional[bool] = None
-    transformers_offline: Optional[bool] = None
 
     # External Services / Webhooks
     webhook_secret: Optional[str] = None
