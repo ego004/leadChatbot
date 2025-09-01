@@ -8,6 +8,8 @@ from app.models.client import Client, IngestionStatus
 from app.models.knowledge_base import KnowledgeDocument, ClientDeployment
 from app.models.lead import Lead, ChatSession, ChatHistory
 from app.models.client_user import ClientUser
+from app.models.analytics import ClientDailyStats
+from app.models.automation import Sequence, SequenceStep, LeadSequenceState
 from app.auth import require_admin
 from app.services.supabase_storage import supabase_storage
 from app.services.ingestion_service import IngestionService
@@ -256,17 +258,36 @@ def delete_client(
         raise HTTPException(status_code=404, detail="Client not found")
     
     # Delete all related data (cascade should handle this, but being explicit)
-    db.query(KnowledgeDocument).filter(KnowledgeDocument.client_id == str(client_id)).delete()
-    db.query(ClientDeployment).filter(ClientDeployment.client_id == str(client_id)).delete()
-    db.query(Lead).filter(Lead.client_id == str(client_id)).delete()
+    db.query(KnowledgeDocument).filter(KnowledgeDocument.client_id == str(client_id)).delete(synchronize_session=False)
+    db.query(ClientDeployment).filter(ClientDeployment.client_id == str(client_id)).delete(synchronize_session=False)
+    db.query(ClientDailyStats).filter(ClientDailyStats.client_id == str(client_id)).delete(synchronize_session=False)
+    db.query(ClientUser).filter(ClientUser.client_id == str(client_id)).delete(synchronize_session=False)
 
-    # Delete chat history and sessions for this client
+    # Delete automation data in proper FK order
+    try:
+        # First delete lead sequence states (depends on both leads and sequences)
+        lead_ids_subq = db.query(Lead.lead_id).filter(Lead.client_id == str(client_id)).subquery()
+        db.query(LeadSequenceState).filter(LeadSequenceState.lead_id.in_(lead_ids_subq)).delete(synchronize_session=False)
+        
+        # Then delete sequence steps (depends on sequences)
+        sequence_ids_subq = db.query(Sequence.sequence_id).filter(Sequence.client_id == str(client_id)).subquery()
+        db.query(SequenceStep).filter(SequenceStep.sequence_id.in_(sequence_ids_subq)).delete(synchronize_session=False)
+        
+        # Then delete sequences (depends on clients)
+        db.query(Sequence).filter(Sequence.client_id == str(client_id)).delete(synchronize_session=False)
+    except Exception:
+        pass
+
+    # Delete chat history and sessions for this client BEFORE leads to satisfy FK (chat_sessions.lead_id -> leads.lead_id)
     try:
         session_ids_subq = db.query(ChatSession.session_id).filter(ChatSession.client_id == str(client_id)).subquery()
         db.query(ChatHistory).filter(ChatHistory.session_id.in_(session_ids_subq)).delete(synchronize_session=False)
         db.query(ChatSession).filter(ChatSession.client_id == str(client_id)).delete(synchronize_session=False)
     except Exception:
         pass
+
+    # Now safe to delete leads
+    db.query(Lead).filter(Lead.client_id == str(client_id)).delete(synchronize_session=False)
 
     # Explicit delete collection without rebuild
     try:
