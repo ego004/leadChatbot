@@ -65,6 +65,17 @@ def admin_create_client(base: str, admin_token: str, name: str, website_url: str
     return r.json()
 
 
+def admin_delete_client(base: str, admin_token: str, client_id: str) -> dict:
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = requests.delete(
+        f"{base}/api/admin/clients/{client_id}",
+        headers=headers,
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
 def get_or_create_deployment(base: str, client_id: str, admin_token: str) -> tuple[str, str]:
     headers = {"Authorization": f"Bearer {admin_token}"}
 
@@ -261,6 +272,8 @@ def main():
         "What services do you offer?",
         "How can I get started?",
     ])
+
+    ap.add_argument('--cleanup-after', action='store_true', help='Delete the created client at the end of the run')
     ap.add_argument('--days', type=int, default=7)
 
     args = ap.parse_args()
@@ -442,6 +455,15 @@ def main():
             print(pretty(client_analytics_daily(args.base_url, client_token, days=args.days)))
         except Exception as e:
             print(f"Analytics fetch failed: {e}")
+
+    # Optional cleanup
+    if args.cleanup_after:
+        try:
+            print("Cleaning up: deleting created client...")
+            deleted = admin_delete_client(args.base_url, admin_token, client_id)
+            print(pretty(deleted))
+        except Exception as e:
+            print(f"Cleanup failed: {e}")
 
     print("E2E full flow complete.")
 

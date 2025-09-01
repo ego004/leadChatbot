@@ -6,9 +6,10 @@ from uuid import UUID
 from app.database import get_db
 from app.models.client import Client, IngestionStatus
 from app.models.knowledge_base import KnowledgeDocument, ClientDeployment
-from app.models.lead import Lead
+from app.models.lead import Lead, ChatSession, ChatHistory
 from app.models.client_user import ClientUser
 from app.auth import require_admin
+from app.services.supabase_storage import supabase_storage
 from app.services.ingestion_service import IngestionService
 from passlib.hash import bcrypt
 
@@ -258,16 +259,25 @@ def delete_client(
     db.query(KnowledgeDocument).filter(KnowledgeDocument.client_id == str(client_id)).delete()
     db.query(ClientDeployment).filter(ClientDeployment.client_id == str(client_id)).delete()
     db.query(Lead).filter(Lead.client_id == str(client_id)).delete()
-    
-    # Delete vector collection for the client
+
+    # Delete chat history and sessions for this client
     try:
-        ingestion_service.rebuild_vectors_for_client(db, str(client_id))  # this deletes and rebuilds; we'll just delete
+        session_ids_subq = db.query(ChatSession.session_id).filter(ChatSession.client_id == str(client_id)).subquery()
+        db.query(ChatHistory).filter(ChatHistory.session_id.in_(session_ids_subq)).delete(synchronize_session=False)
+        db.query(ChatSession).filter(ChatSession.client_id == str(client_id)).delete(synchronize_session=False)
     except Exception:
         pass
+
     # Explicit delete collection without rebuild
     try:
         from app.services.service_manager import service_manager
         service_manager.get_vector_store_service(f"client_{client_id}").delete_collection()
+    except Exception:
+        pass
+
+    # Delete mirrored files from Supabase Storage (best effort)
+    try:
+        supabase_storage.delete_all_client_markdowns(str(client_id))
     except Exception:
         pass
 

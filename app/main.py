@@ -1,5 +1,3 @@
-# Module logger
-logger = logging.getLogger(__name__)
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +11,8 @@ from app.services.vector_store_service import preload_embeddings
 from app.services.service_manager import service_manager
 import logging
 
+# Module logger
+logger = logging.getLogger(__name__)
 # Avoid destructive operations at import time; ensure tables will be created on startup
 
 # Create FastAPI app
