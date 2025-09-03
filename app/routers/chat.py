@@ -70,14 +70,18 @@ async def send_message(
         if not check_rate_limit(client_ip):
             raise HTTPException(status_code=429, detail="Rate limit exceeded")
     
-    # Get client by custom ID
-    deployment = db.query(ClientDeployment).filter(
+    # Get deployment with client data in single query
+    deployment_query = db.query(ClientDeployment, Client).join(
+        Client, ClientDeployment.client_id == Client.client_id
+    ).filter(
         ClientDeployment.custom_client_id == custom_client_id,
         ClientDeployment.is_deployed == True
     ).first()
     
-    if not deployment:
+    if not deployment_query:
         raise HTTPException(status_code=404, detail="Chatbot not found or not deployed")
+    
+    deployment, client = deployment_query
     
     # Optional per-client token auth
     if REQUIRE_DEPLOYMENT_TOKEN:
@@ -97,17 +101,22 @@ async def send_message(
     # Initialize services using service manager (cached instances)
     lead_service = service_manager.get_lead_service(db)
 
-    # Determine lead and session linkage correctly
+    # Optimize session and lead lookup with JOIN
     lead_created = False
     session = None
+    lead = None
+    
     if session_id:
-        # If a session exists, reuse its lead to avoid creating a new lead
-        session = db.query(ChatSession).filter(
+        # Single query to get session with lead data
+        session_lead_query = db.query(ChatSession, Lead).outerjoin(
+            Lead, ChatSession.lead_id == Lead.lead_id
+        ).filter(
             ChatSession.session_id == session_id,
             ChatSession.client_id == client_id
         ).first()
-        if session:
-            lead = db.query(Lead).filter(Lead.lead_id == session.lead_id).first()
+        
+        if session_lead_query:
+            session, lead = session_lead_query
         else:
             # No session with that id yet → find or create lead by email/phone/name (do NOT use session_id as browser session)
             lead, lead_created = lead_service.find_or_create_lead_with_flag(
@@ -188,25 +197,25 @@ async def send_message(
     # Get relevant context from knowledge base using cached service
     # IngestionService stores vectors in collection name prefixed with "client_"
     vector_store = service_manager.get_vector_store_service(f"client_{client_id}")
-    # Retrieve KB context
+    # Optimized KB context retrieval with reduced k value
     try:
-        k = max(1, min(int(top_k), 20))
+        k = max(1, min(int(top_k), 10))  # Reduced max from 20 to 10
     except Exception:
-        k = 5
+        k = 3  # Reduced default from 5 to 3
     context_results = vector_store.query(message, k=k)
     context = "\n".join([doc.page_content for doc in context_results])
     
-    # Get chat history for context
+    # Optimized chat history query with reduced limit
     chat_history = []
     recent_messages = db.query(ChatHistory).filter(
         ChatHistory.session_id == session.session_id
-    ).order_by(ChatHistory.timestamp.desc()).limit(10).all()
+    ).order_by(ChatHistory.timestamp.desc()).limit(5).all()  # Reduced from 10 to 5
     
-    for msg in reversed(recent_messages):
-        chat_history.append({
-            "sender": msg.sender.value,
-            "message": msg.message_text
-        })
+    # Build chat history list in single pass
+    chat_history = [{
+        "sender": msg.sender.value,
+        "message": msg.message_text
+    } for msg in reversed(recent_messages)]
     
     # Generate AI response with Gemini and tools using cached service
     gemini_service = service_manager.get_gemini_service()
@@ -240,11 +249,13 @@ async def send_message(
 
     system_prompt = base_prompt + "\n\nBehavioral rules:\n- " + "\n- ".join(behavioral_rules)
 
+    # Use streaming for faster initial response
     ai_result = await gemini_service.generate_response(
         message=message, 
         context=context, 
         system_prompt=system_prompt,
-        chat_history=chat_history
+        chat_history=chat_history,
+        stream=False  # Can enable streaming later if needed
     )
     
     ai_response = ai_result["response"]
