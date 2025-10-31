@@ -94,7 +94,10 @@ async def client_login(
                 ClientUser.is_active == True
             ).first()
 
-        if not user or not bcrypt.verify(password, user.password_hash):
+        # Bcrypt has a 72 byte limit, truncate password if needed
+        password_truncated = password[:72] if len(password.encode('utf-8')) > 72 else password
+        
+        if not user or not bcrypt.verify(password_truncated, user.password_hash):
             raise HTTPException(status_code=401, detail="Incorrect credentials")
             
         # Create access token (sub=client_id)

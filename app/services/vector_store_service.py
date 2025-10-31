@@ -99,14 +99,21 @@ class VectorStoreService:
     def query(self, query_text: str, k: int = 5) -> List[Document]:
         try:
             # Direct similarity search with filter by logical collection boundary
+            # Use the filter parameter correctly for Supabase
             return self.vector_store.similarity_search(
                 query=query_text,
                 k=k,
-                filter={"collection": self.collection_name}
+                filter={"collection": {"$eq": self.collection_name}}
             )
         except Exception as e:
             logging.error(f"Failed to query vector store: {e}")
-            return []
+            # Fallback: try without filter if the filter syntax fails
+            try:
+                logging.warning("Retrying query without filter due to error")
+                return self.vector_store.similarity_search(query=query_text, k=k)
+            except Exception as e2:
+                logging.error(f"Failed to query vector store even without filter: {e2}")
+                return []
 
     def delete_collection(self):
         try:

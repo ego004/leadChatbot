@@ -407,10 +407,12 @@ async def create_client_user(
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="User already exists for this client")
+    # Bcrypt has a 72 byte limit, truncate password if needed
+    password_truncated = password[:72] if len(password.encode('utf-8')) > 72 else password
     user = ClientUser(
         client_id=str(client_id),
         email=email,
-        password_hash=bcrypt.hash(password),
+        password_hash=bcrypt.hash(password_truncated),
         is_active=True,
     )
     db.add(user)
@@ -434,6 +436,8 @@ def reset_client_user_password(
     ).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    user.password_hash = bcrypt.hash(new_password)
+    # Bcrypt has a 72 byte limit, truncate password if needed
+    new_password_truncated = new_password[:72] if len(new_password.encode('utf-8')) > 72 else new_password
+    user.password_hash = bcrypt.hash(new_password_truncated)
     db.commit()
     return {"message": "Password reset successfully"}
